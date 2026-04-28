@@ -1,6 +1,6 @@
 import { SETTINGS, getSetting, log, warn } from "./constants.js";
 import { SlotRegistry } from "./slot-store.js";
-import { emitLockEvent } from "./socket.js";
+import { emitLockEvent, emitSecretMirror, emitSecretMirrorCleanup } from "./socket.js";
 
 /**
  * Decide how this dialog's roll mode affects task-dice spawning.
@@ -47,21 +47,29 @@ export function classifyRollSecrecy(dialog) {
     return { secret: false };
   }
 
-  // All secret modes spawn locally on the dialog opener's client (never
-  // synced via socket — other clients shouldn't see the throw). The opener
-  // throws their own dice in every case.
+  // All secret modes spawn locally on the dialog opener's client; we never
+  // sync via socket because other clients shouldn't see the throw at all
+  // (that animation is the leak vector we close here).
   //
-  // The only mode where the opener is *not* supposed to know the result is
-  // a player-initiated Blind Roll: PF2e hides the chat from the player too.
-  // For that case we give them a CEREMONIAL ghost die — every face renders
-  // as "?", and because the mesh is not tagged `dsnPF2eBridge_owned` the
-  // listener ignores its value, so PF2e falls back to RNG (the player can't
-  // back-derive the result from what they threw).
+  // Whether the opener sees a real die or a ghost depends on whether they
+  // can read the chat result for this roll mode:
   //
-  // GM-initiated Blind Roll, GM Roll, Self Roll: the opener can see the
-  // chat result, so a real die that feeds PF2e is fine.
+  //   GM Roll    : PF2e hides chat from everyone except the GM. So a player
+  //                opener cannot see the result → ghost. GM opener sees
+  //                chat → real die feeds PF2e.
+  //   Blind Roll : same as GM Roll — chat hidden from all but the GM.
+  //                Player opener → ghost; GM opener → real.
+  //   Self Roll  : chat is visible only to the roller, who *is* the opener.
+  //                Either GM or player as opener can read chat → real die.
+  //
+  // Ghost meshes are not tagged `dsnPF2eBridge_owned`, so the listener
+  // ignores their value and PF2e ends up using its own RNG — the player
+  // physically cannot back-derive the actual roll result.
   const isGM = !!game.user?.isGM;
-  const isPlayerBlind = norm === "blind" && !isGM;
+  const openerSeesChat =
+    norm === "self"            // self → opener (=roller) sees chat
+    || (isGM && (norm === "gm" || norm === "blind"));  // GM opener → GM sees chat
+  const ceremonial = !openerSeesChat;
 
   if (norm === "gm" || norm === "blind" || norm === "self") {
     return {
@@ -69,7 +77,7 @@ export function classifyRollSecrecy(dialog) {
       mode: norm,
       shouldSpawn: true,
       shouldSync: false,
-      ceremonial: isPlayerBlind,
+      ceremonial,
     };
   }
 
@@ -191,6 +199,17 @@ export async function spawnTaskDiceForStore(store) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
       }
+      // For secret rolls, broadcast to other clients so they can spawn their
+      // own mirror mesh (real for GM in gm/blind, ghost for everyone else).
+      if (secrecy.secret) {
+        emitSecretMirror({
+          mode: secrecy.mode,
+          dieType,
+          position: pos,
+          persistentId: mesh.userData.persistentId,
+          openerUserId: game.user.id,
+        });
+      }
       mesh.userData.dsnPF2eBridge_dialogId = store.dialogId;
       // Ceremonial ghost dice are intentionally NOT tagged as owned. The
       // listener's owned-only gate then ignores any value they produce, so
@@ -302,11 +321,19 @@ export function cleanupTaskDiceForStore(store) {
   if (ids.length === 0) return;
   const dice3d = game.dice3d;
   if (!dice3d) return;
+  // For secret-roll task dice we used synchronize=false on spawn, so we must
+  // remove non-broadcast (true=broadcast). For non-secret task dice DSN's
+  // own remove handles cross-client sync. Either way, also tell our own
+  // mirror channel to clean up the secret mirrors on other clients.
+  const wasSecret = store?._secret === true;
   for (const id of ids) {
-    try { dice3d.removePersistentDie(id, true); } catch {}
+    try { dice3d.removePersistentDie(id, !wasSecret); } catch {}
+  }
+  if (wasSecret) {
+    emitSecretMirrorCleanup(ids);
   }
   store._spawnedMeshIds = [];
-  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId}`);
+  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId} (secret=${wasSecret})`);
 }
 
 /**

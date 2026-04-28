@@ -1,20 +1,23 @@
 import { MOD_ID, log, warn } from "./constants.js";
 
 /**
- * Cross-client sync for the `userData.lockedBy` field on task dice.
+ * Cross-client sync for two things:
  *
- * DSN's spawnPersistentDie(synchronize=true) only syncs DSN-defined fields
- * (persistentId, dieType, appearances, etc). Our `lockedBy` set locally on
- * the mesh therefore never reaches other players, so on their side the
- * InputHandler sees `lockedBy === undefined` and lets them drag the die.
+ *  1. The `userData.lockedBy` field on task dice. DSN's own spawn-sync does
+ *     not include lockedBy, so we broadcast it ourselves.
  *
- * We add a small socket channel that broadcasts lock/unlock decisions so
- * every client applies the same `lockedBy` value to the matching mesh.
+ *  2. SECRET-ROLL MIRRORS. The opener spawns their task dice locally
+ *     (synchronize=false) so DSN doesn't broadcast a real-die spawn to other
+ *     clients. We then emit a "secret-mirror" socket message describing the
+ *     spawn; other clients receive it, decide based on their own role +
+ *     the roll's mode whether they should see a real die, a ghost die, or
+ *     nothing, and spawn a local mirror accordingly.
  *
- * Race condition: our lock broadcast may arrive on the receiver before
- * DSN has finished creating the mesh from its own create-socket frame.
- * We handle that by parking the lock in `pendingLocks` and re-applying
- * whenever the persistent dice list mutates.
+ *     Visibility matrix (from the user's design):
+ *       Self Roll  : opener real (spawned by opener), others ghost
+ *       GM Roll    : GM real, opener (player) ghost, other players ghost
+ *       Blind Roll : same as GM Roll
+ *       Public     : not used here — handled by DSN's normal sync
  */
 
 const SOCKET_NAME = `module.${MOD_ID}`;
@@ -30,14 +33,8 @@ export function registerSocket() {
   log("socket registered:", SOCKET_NAME);
 }
 
-/**
- * Called by spawn-helper after spawning a task die or after the user toggles
- * the access lock. Broadcasts to all other clients AND applies locally for
- * symmetry (so the same code path is exercised everywhere).
- *
- * @param {string} persistentId  DSN-assigned id (mesh.userData.persistentId)
- * @param {string|null} lockedBy A user id, or null to clear the lock.
- */
+/* -------- LOCK SYNC -------- */
+
 export function emitLockEvent(persistentId, lockedBy) {
   if (!persistentId) return;
   try {
@@ -49,16 +46,7 @@ export function emitLockEvent(persistentId, lockedBy) {
   } catch (e) {
     warn("emitLockEvent socket failed", e);
   }
-  // The sender already set the local mesh; this is here for completeness in
-  // case the caller didn't (idempotent).
   applyLock(persistentId, lockedBy);
-}
-
-function onSocketMessage(payload) {
-  if (!payload || typeof payload !== "object") return;
-  if (payload.type === "lock") {
-    applyLock(payload.persistentId, payload.lockedBy);
-  }
 }
 
 function applyLock(persistentId, lockedBy) {
@@ -68,8 +56,6 @@ function applyLock(persistentId, lockedBy) {
     : null;
 
   if (!mesh?.userData) {
-    // Mesh hasn't arrived from DSN's create-sync yet on this client.
-    // Park it; flushPendingLocks() will pick it up when the list mutates.
     pendingLocks.set(persistentId, lockedBy);
     return;
   }
@@ -96,5 +82,125 @@ function setLockOnMesh(mesh, lockedBy) {
     delete mesh.userData.lockedBy;
   } else {
     mesh.userData.lockedBy = lockedBy;
+  }
+}
+
+/* -------- SECRET MIRROR SYNC -------- */
+
+/**
+ * Tell every other client to spawn a mirror mesh for a secret roll. Each
+ * receiver decides on its own whether the mirror is real, ghost, or skipped.
+ *
+ * @param {object} payload
+ * @param {string} payload.mode             "self" | "gm" | "blind"
+ * @param {string} payload.dieType          e.g. "d20"
+ * @param {object} payload.position         {x, y} canvas-percent coords
+ * @param {string} payload.persistentId
+ * @param {string} payload.openerUserId
+ */
+export function emitSecretMirror(payload) {
+  if (!payload?.persistentId) return;
+  try {
+    game.socket?.emit(SOCKET_NAME, { type: "mirror", ...payload });
+  } catch (e) {
+    warn("emitSecretMirror failed", e);
+  }
+}
+
+/** Tell every other client to remove their mirror meshes for these IDs. */
+export function emitSecretMirrorCleanup(persistentIds) {
+  if (!persistentIds?.length) return;
+  try {
+    game.socket?.emit(SOCKET_NAME, { type: "mirror-cleanup", persistentIds });
+  } catch (e) {
+    warn("emitSecretMirrorCleanup failed", e);
+  }
+}
+
+function decideViewerVisibility({ mode, openerUserId }) {
+  // Opener's mesh was spawned by themselves locally; never re-spawn here.
+  if (game.user?.id === openerUserId) return "skip";
+
+  const isGM = !!game.user?.isGM;
+  if (mode === "self") {
+    // self: only the roller (opener) sees real; everyone else (incl. GM) sees ghost
+    return "ghost";
+  }
+  if (mode === "gm" || mode === "blind") {
+    // GM sees the real die; everyone else (other players) sees ghost
+    return isGM ? "real" : "ghost";
+  }
+  // unknown mode → skip
+  return "skip";
+}
+
+async function applyMirror(payload) {
+  const visibility = decideViewerVisibility(payload);
+  if (visibility === "skip") return;
+
+  const dice3d = game.dice3d;
+  if (!dice3d) return;
+
+  // Ask DSN to spawn a local-only mesh with the same persistentId so
+  // other modules that index by persistentId line up. We pass the ghost
+  // appearance flag for the ghost case.
+  try {
+    const spawnOpts = {
+      ownerUserId: payload.openerUserId,
+      remotePersistentId: payload.persistentId,
+    };
+    if (visibility === "ghost") {
+      const Dice3DCls = dice3d.constructor;
+      const factory = dice3d.DiceFactory;
+      if (Dice3DCls?.APPEARANCE && factory?.getAppearanceForDice) {
+        const raw = Dice3DCls.APPEARANCE(game.user);
+        const base = factory.getAppearanceForDice(raw, payload.dieType);
+        spawnOpts.appearance = { ...base, isGhost: true };
+      }
+    }
+    const mesh = await dice3d.spawnPersistentDie(
+      payload.dieType,
+      payload.position,
+      spawnOpts,
+      false, // never re-broadcast
+    );
+    if (mesh?.userData) {
+      mesh.userData.dsnPF2eBridge_secretMirror = true;
+      // Mirror meshes are display-only — nobody on this client should be
+      // able to drag/throw them. Lock them to the opener so DSN's
+      // InputHandler rejects every drag attempt on this client.
+      mesh.userData.lockedBy = payload.openerUserId;
+    }
+    log(`secret mirror spawned (${visibility}) persistentId=${payload.persistentId}`);
+  } catch (e) {
+    warn("secret mirror spawn failed", e);
+  }
+}
+
+function applyMirrorCleanup({ persistentIds }) {
+  const dice3d = game.dice3d;
+  if (!dice3d) return;
+  for (const id of persistentIds || []) {
+    try { dice3d.removePersistentDie(id, false); } catch {}
+  }
+}
+
+/* -------- SOCKET ROUTER -------- */
+
+function onSocketMessage(payload) {
+  if (!payload || typeof payload !== "object") return;
+  switch (payload.type) {
+    case "lock":
+      applyLock(payload.persistentId, payload.lockedBy);
+      break;
+    case "mirror":
+      applyMirror(payload);
+      break;
+    case "mirror-cleanup":
+      applyMirrorCleanup(payload);
+      break;
+    default:
+      // unknown / forward-compat — ignore
+      break;
   }
 }
