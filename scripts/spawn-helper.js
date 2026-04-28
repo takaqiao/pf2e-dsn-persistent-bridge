@@ -21,22 +21,38 @@ import { emitLockEvent } from "./socket.js";
  *               Initiator → spawn locally (sync=false).
  *               Others → don't spawn.
  */
+/**
+ * Normalize a Foundry roll-mode string. Foundry has used several spellings
+ * across versions:
+ *   v10/v11: "roll" / "gmroll" / "blindroll" / "selfroll"
+ *   v13/v14: PF2e dialog <select> emits "public" / "gm" / "blind" / "self"
+ *            (Foundry changed CONFIG.ChatMessage.modes value strings).
+ * We collapse both forms to the short stem so comparisons stay simple.
+ */
+function normalizeMode(mode) {
+  const m = String(mode ?? "").toLowerCase().trim();
+  if (!m) return "";
+  // strip a trailing "roll" if present: "blindroll" → "blind"
+  return m.endsWith("roll") ? m.slice(0, -4) : m;
+}
+
 export function classifyRollSecrecy(dialog) {
   if (getSetting(SETTINGS.respectSecretRolls) === false) {
     return { secret: false };
   }
 
-  const mode = getDialogMessageMode(dialog);
-  if (!mode || mode === "publicroll" || mode === "roll") {
+  const norm = normalizeMode(getDialogMessageMode(dialog));
+  // "" (none/unknown) and "public" are non-secret. Anything else is secret.
+  if (!norm || norm === "public") {
     return { secret: false };
   }
 
   const isGM = !!game.user?.isGM;
-  if (mode === "gmroll") {
+  if (norm === "gm") {
     // GM-only chat. Spawn a real die for the GM, nothing for players.
-    return { secret: true, mode, shouldSpawn: isGM, shouldSync: false, ceremonial: false };
+    return { secret: true, mode: norm, shouldSpawn: isGM, shouldSync: false, ceremonial: false };
   }
-  if (mode === "blindroll") {
+  if (norm === "blind") {
     // GM sees the real value; everyone else (including the player who opened
     // the dialog) is supposed to be blind. Instead of skipping spawn for
     // non-GM, give them a CEREMONIAL ghost die: they can throw it physically
@@ -45,13 +61,13 @@ export function classifyRollSecrecy(dialog) {
     // so the slot-fill / evaluate-injection pipeline ignores it — PF2e ends
     // up using its own RNG, fully independent of what the player threw.
     if (isGM) {
-      return { secret: true, mode, shouldSpawn: true, shouldSync: false, ceremonial: false };
+      return { secret: true, mode: norm, shouldSpawn: true, shouldSync: false, ceremonial: false };
     }
-    return { secret: true, mode, shouldSpawn: true, shouldSync: false, ceremonial: true };
+    return { secret: true, mode: norm, shouldSpawn: true, shouldSync: false, ceremonial: true };
   }
-  if (mode === "selfroll") {
+  if (norm === "self") {
     // Only the opener sees the chat message → spawn locally for them.
-    return { secret: true, mode, shouldSpawn: true, shouldSync: false, ceremonial: false };
+    return { secret: true, mode: norm, shouldSpawn: true, shouldSync: false, ceremonial: false };
   }
 
   // Unknown mode: be safe, treat as public.
