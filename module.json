@@ -27,6 +27,11 @@
       "path": "lang/en.json"
     },
     {
+      "lang": "cn",
+      "name": "\u4e2d\u6587 (\u7b80\u4f53)",
+      "path": "lang/zh-CN.json"
+    },
+    {
       "lang": "zh-CN",
       "name": "\u4e2d\u6587 (\u7b80\u4f53)",
       "path": "lang/zh-CN.json"

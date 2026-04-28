@@ -142,7 +142,6 @@ function slotsShapeChanged(store, descriptors) {
 
 async function renderTrayHTML(app, store) {
   const dsnReady = compat.checkDsn();
-  const showLock = getSetting(SETTINGS.showLockButton) === true;
   const lockingEnabled = getSetting(SETTINGS.taskDiceLockedByDefault) !== false;
   const isUnlocked = store._unlocked === true;
   // Secret rolls where the current client doesn't get task dice spawn:
@@ -157,7 +156,6 @@ async function renderTrayHTML(app, store) {
     secretSkipped,
     ceremonialGhost,
     isEmpty: store.slots.length === 0,
-    showLock,
     showAccessToggle: lockingEnabled && store.slots.length > 0,
     accessLocked: !isUnlocked,
     accessIcon: isUnlocked ? "fa-lock-open" : "fa-lock",

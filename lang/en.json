@@ -58,7 +58,7 @@
       },
       "settleBufferMs": {
         "name": "Settle buffer (ms)",
-        "hint": "DSN's physics engine declares the throw 'finished' a few hundred ms before the dice visually stop tumbling. This is how long we wait *after* that signal before recording the result, so the slot fills at the moment the die actually looks stopped. Default 1500ms. Increase if it still feels too fast (try 2500-3000), decrease if it feels sluggish."
+        "hint": "Extra wait after `engine.rolling` flips false before we record the die value, to cover any visual lag between physics-done and render-done. Default 100ms. Range 0-1000ms."
       },
       "matchPriority": {
         "name": "Slot match priority",
@@ -79,7 +79,7 @@
       },
       "autoSubmitDelayMs": {
         "name": "Auto-submit delay (ms)",
-        "hint": "How long to wait after the last slot is filled before auto-submitting. Default 900ms — gives you time to see the result and the slot turning green before the dialog closes. 0 = instant, 5000 = 5 seconds."
+        "hint": "How long to wait after the last slot is filled before auto-submitting. Default 100ms. Range 0-1000ms; raise to 500-1000 if it feels too snappy."
       },
       "showLockButton": {
         "name": "Show lock button",

@@ -4,12 +4,9 @@ export const MOD_PREFIX = "[PF2e×DSN]";
 export const SETTINGS = {
   enabled: "enabled",
   requireAllSlots: "requireAllSlots",
-  consumeAnyOwner: "consumeAnyOwner",
-  matchPriority: "matchPriority",
   applyToReroll: "applyToReroll",
   autoSubmitOnFill: "autoSubmitOnFill",
   autoSubmitDelayMs: "autoSubmitDelayMs",
-  showLockButton: "showLockButton",
   suppressRedundantDsn: "suppressRedundantDsn",
   autoSpawnDice: "autoSpawnDice",
   onlyConsumeOwned: "onlyConsumeOwned",
