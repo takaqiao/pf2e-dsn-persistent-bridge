@@ -205,18 +205,16 @@ export async function spawnTaskDiceForStore(store) {
       log(`autoSpawn: secret roll opener (${secrecy.mode}); real die, local-only`);
     }
   }
-  // Sync policy:
-  //   ceremonial (player blind/gm) → sync=true so the GM can see the throw
-  //     animation in real time. Locally we render ghost via opts.appearance;
-  //     other clients receive raw appearance via DSN broadcast (real die).
-  //     We then post-process via socket to hide the mesh on non-GM clients
-  //     so other players don't see the value.
-  //   non-ceremonial secret (GM as opener of gm/blind, or self roll) →
-  //     sync=false; mirrors handled by our own socket where applicable.
-  const synchronize =
-    !secrecy.secret ? true
-    : secrecy.ceremonial ? true
-    : false;
+  // Sync policy: every secret mode is local-only (synchronize=false). DSN
+  // does NOT broadcast the spawn; we instead emit our own `secret-mirror`
+  // message so each receiver can independently spawn a local mesh whose
+  // appearance matches their viewer role (ghost vs real) — see decideViewer
+  // in socket.js. The `persistentId` is preserved across all clients, so
+  // DSN's own throw-socket (independent of spawn sync) automatically replays
+  // the physics on every mirror mesh — GM sees a real-die throw animation,
+  // other players see a ghost throw animation, opener stays in their own
+  // local rendering.
+  const synchronize = !secrecy.secret;
 
   const positions = layoutPositions(slots.length);
   const spawnedIds = [];
@@ -241,37 +239,26 @@ export async function spawnTaskDiceForStore(store) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
       }
-      // Secret-roll cross-client policy:
+      // Secret-roll cross-client policy: a single, uniform mirror path.
       //
-      // CEREMONIAL (player gm/blind, sync=true)
-      //   Local mesh = ghost (opts.appearance.isGhost=true).
-      //   DSN broadcasts spawn with raw appearance to everyone else, so
-      //   their meshes render as real dice — and the throw socket
-      //   (independent of spawn sync) replays the physics with the
-      //   forcedResult value. GM thus sees the actual roll value land.
-      //   Other players, however, must NOT see the real value, so we
-      //   emit a "secret-display" hide instruction over our own socket;
-      //   non-GM receivers will set mesh.visible=false on their end.
+      // The opener's spawn is local (sync=false). emitSecretMirror tells
+      // every other client to spawn its own mirror mesh with the same
+      // persistentId. Each receiver independently picks ghost or real
+      // appearance via decideViewerVisibility:
       //
-      // OTHER SECRET MODES — opener sees real, sync=false on DSN.
-      //   emitSecretMirror lets every other client spawn a local mirror
-      //   under the same persistentId, with appearance picked by their
-      //   own role:
-      //     Self Roll      → all non-opener clients see ghost
-      //     GM-opener gm/blind → other players see ghost (no other GM
-      //                          in single-GM games; if there is one
-      //                          they see real)
-      //   Because the mirrors share persistentId, DSN's own throw socket
-      //   (independent of spawn-sync) will replay the opener's physics
-      //   on every mirror — so others see the throw animation, not just
-      //   a static spawn.
-      if (secrecy.ceremonial) {
-        emitSecretDisplay({
-          mode: secrecy.mode,
-          persistentId: mesh.userData.persistentId,
-          openerUserId: game.user.id,
-        });
-      } else if (secrecy.secret) {
+      //   Self Roll  → all non-opener clients (incl. GM) → ghost
+      //   GM Roll    → GM → real, other players → ghost
+      //   Blind Roll → GM → real, other players (incl. opener-PL's
+      //                peers) → ghost. Opener's own client renders
+      //                ghost locally via opts.appearance (handled below
+      //                in the ceremonial branch).
+      //
+      // Because all mirror mesh share the opener's persistentId, DSN's
+      // own throw socket (independent of spawn-sync) automatically
+      // replays the physics across every client when the opener throws.
+      // So every viewer sees a moving die — real for those allowed to
+      // see the value, ghost for those who shouldn't.
+      if (secrecy.secret) {
         emitSecretMirror({
           mode: secrecy.mode,
           dieType,
@@ -395,26 +382,18 @@ export function cleanupTaskDiceForStore(store) {
   if (!dice3d) return;
 
   // Removal sync semantics:
-  //   ceremonial (sync=true on spawn) → DSN sync the remove too (broadcast=true)
-  //   non-ceremonial secret (sync=false) → local remove only (broadcast=false)
-  //   public (sync=true) → DSN sync the remove (broadcast=true)
-  const wasCeremonial = store?._ceremonial === true;
+  //   public (sync=true on spawn) → DSN sync the remove (broadcast=true)
+  //   secret (sync=false on spawn) → local remove only; we tell receivers
+  //     via secret-mirror-cleanup so they tear down their own mirror meshes.
   const wasSecret = store?._secret === true;
-  const broadcast = !wasSecret || wasCeremonial; // public OR ceremonial sync
   for (const id of ids) {
-    try { dice3d.removePersistentDie(id, broadcast); } catch {}
+    try { dice3d.removePersistentDie(id, !wasSecret); } catch {}
   }
-  // If we emitted a secret-mirror (self roll), tell receivers to clean up.
-  if (wasSecret && !wasCeremonial) {
+  if (wasSecret) {
     emitSecretMirrorCleanup(ids);
   }
-  // If we emitted secret-display hide instructions (ceremonial), tell
-  // receivers it's safe to forget those entries.
-  if (wasCeremonial) {
-    emitSecretDisplayCleanup(ids);
-  }
   store._spawnedMeshIds = [];
-  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId} (secret=${wasSecret}, ceremonial=${wasCeremonial})`);
+  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId} (secret=${wasSecret})`);
 }
 
 /**
