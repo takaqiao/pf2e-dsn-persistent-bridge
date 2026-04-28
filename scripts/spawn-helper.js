@@ -42,32 +42,31 @@ export function classifyRollSecrecy(dialog) {
   }
 
   const norm = normalizeMode(getDialogMessageMode(dialog));
-  // "" (none/unknown) and "public" are non-secret. Anything else is secret.
+  // "" (none/unknown) and "public" are non-secret.
   if (!norm || norm === "public") {
     return { secret: false };
   }
 
-  const isGM = !!game.user?.isGM;
-  if (norm === "gm") {
-    // GM-only chat. Spawn a real die for the GM, nothing for players.
-    return { secret: true, mode: norm, shouldSpawn: isGM, shouldSync: false, ceremonial: false };
-  }
-  if (norm === "blind") {
-    // GM sees the real value; everyone else (including the player who opened
-    // the dialog) is supposed to be blind. Instead of skipping spawn for
-    // non-GM, give them a CEREMONIAL ghost die: they can throw it physically
-    // for the ritual feel, but every face shows "?" so they can't read the
-    // result. The ceremonial mesh is not tagged as `dsnPF2eBridge_owned`,
-    // so the slot-fill / evaluate-injection pipeline ignores it — PF2e ends
-    // up using its own RNG, fully independent of what the player threw.
-    if (isGM) {
-      return { secret: true, mode: norm, shouldSpawn: true, shouldSync: false, ceremonial: false };
-    }
-    return { secret: true, mode: norm, shouldSpawn: true, shouldSync: false, ceremonial: true };
-  }
-  if (norm === "self") {
-    // Only the opener sees the chat message → spawn locally for them.
-    return { secret: true, mode: norm, shouldSpawn: true, shouldSync: false, ceremonial: false };
+  // Any secret mode (gm / blind / self) gets the same treatment: spawn a
+  // CEREMONIAL ghost die only on the dialog opener's client. Every face
+  // renders as "?", so even the GM (when GM is the opener of a GM Roll)
+  // can't read the value off the mesh. PF2e's evaluate runs against pure
+  // RNG because ceremonial dice don't carry the `dsnPF2eBridge_owned` flag,
+  // so the listener never feeds their values into the slot pipeline.
+  // The actual result is communicated via the chat message PF2e produces
+  // — and PF2e's own roll-mode handling already controls who sees that.
+  //
+  // Other clients (not the opener) get no spawn at all: they shouldn't see
+  // the dice land at all, since that animation is the leak vector we're
+  // closing here.
+  if (norm === "gm" || norm === "blind" || norm === "self") {
+    return {
+      secret: true,
+      mode: norm,
+      shouldSpawn: true,
+      shouldSync: false,
+      ceremonial: true,
+    };
   }
 
   // Unknown mode: be safe, treat as public.
