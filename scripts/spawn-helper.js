@@ -90,6 +90,31 @@ export function classifyRollSecrecy(dialog) {
  * with `isGhost: true`, which DSN's DiceFactory honors by replacing every
  * face label with "?" in the rendered material.
  */
+/**
+ * Remove a task die from DSN's persistent-dice flag so refresh doesn't
+ * resurrect it. DSN normally writes every spawned die owned by the current
+ * user into `user.flags["dice-so-nice"].persistentDice` for restoration on
+ * reload. Task dice are session-only by design — a refresh while a dialog
+ * is open should not leave the canvas littered with orphaned task meshes.
+ *
+ * Touches DSN's private `_persistentDiceData` Map (the in-memory source
+ * of truth that gets serialized to the flag). After we delete the entry
+ * we trigger a re-save so the flag stops listing this die.
+ */
+function stripFromDsnPersistFlag(persistentId) {
+  try {
+    const dice3d = game.dice3d;
+    if (!dice3d || !persistentId) return;
+    dice3d._persistentDiceData?.delete?.(persistentId);
+    // Re-save the (now smaller) map back to the user flag.
+    if (typeof dice3d._savePersistentDiceToFlags === "function") {
+      dice3d._savePersistentDiceToFlags();
+    }
+  } catch (e) {
+    warn("stripFromDsnPersistFlag failed", e);
+  }
+}
+
 function buildGhostAppearance(dieType) {
   try {
     const Dice3DCls = game.dice3d?.constructor;
@@ -210,6 +235,11 @@ export async function spawnTaskDiceForStore(store) {
           openerUserId: game.user.id,
         });
       }
+      // Strip this task die from DSN's per-user "persistentDice" flag so a
+      // browser refresh while the dialog is open doesn't leave an orphan
+      // mesh on the canvas. Without this, DSN re-spawns it on every reload
+      // because it thinks the user wanted a permanent decorative die there.
+      stripFromDsnPersistFlag(mesh.userData.persistentId);
       mesh.userData.dsnPF2eBridge_dialogId = store.dialogId;
       // Ceremonial ghost dice are intentionally NOT tagged as owned. The
       // listener's owned-only gate then ignores any value they produce, so
