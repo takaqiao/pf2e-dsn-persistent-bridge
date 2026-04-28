@@ -224,9 +224,22 @@ export async function spawnTaskDiceForStore(store) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
       }
-      // For secret rolls, broadcast to other clients so they can spawn their
-      // own mirror mesh (real for GM in gm/blind, ghost for everyone else).
-      if (secrecy.secret) {
+      // Secret-roll mirroring policy:
+      //
+      // SELF ROLL — emit a ghost mirror to all other clients. Self rolls
+      //             are "I'm the only one who reads chat" — no one else
+      //             gets a 3D animation from DSN's chat-show, so we give
+      //             them a static ghost mesh as a "someone is rolling"
+      //             social cue. The opener sees the real die.
+      //
+      // GM / BLIND — DO NOT mirror. DSN's own chat-triggered 3D show kicks
+      //             in when the dialog submits and PF2e posts the result
+      //             chat. GM sees a real-die animation with the actual
+      //             PF2e-RNG value (correct), and players for whom the
+      //             chat is hidden also don't get the DSN show (also
+      //             correct). Mirroring here would *double-show* with a
+      //             wrong value (mirror's spawn-time face, not RNG truth).
+      if (secrecy.secret && secrecy.mode === "self") {
         emitSecretMirror({
           mode: secrecy.mode,
           dieType,
