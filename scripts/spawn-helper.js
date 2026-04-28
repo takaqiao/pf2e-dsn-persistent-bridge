@@ -78,16 +78,28 @@ function buildGhostAppearance(dieType) {
 }
 
 function getDialogMessageMode(dialog) {
-  // PF2e dialogs read context.messageMode (a CONFIG.ChatMessage.modes key:
-  // "publicroll" | "gmroll" | "blindroll" | "selfroll"). Fallback to user
-  // setting then core default. Note: this is captured at spawn time; if the
-  // GM later flips the dropdown inside the dialog before submitting, the
-  // initial spawn decision is not retroactively changed (mid-dialog mode
-  // changes during a secret roll are handled by re-running spawn on the
-  // next dialog re-render in ui-injector).
-  return dialog?.context?.messageMode
-    ?? game?.user?.settings?.messageMode
-    ?? game?.settings?.get?.("core", "rollMode");
+  // 1) Most authoritative: read the live <select> value in the dialog DOM.
+  //    PF2e dialog template puts `<select name="messageMode">` directly in
+  //    the form. This reflects whatever the user has currently dialed in,
+  //    including a fresh change they made before submit.
+  try {
+    const root = dialog?.element?.[0] ?? dialog?.element;
+    const select = root?.querySelector?.('select[name="messageMode"]');
+    if (select?.value) return select.value;
+  } catch {}
+
+  // 2) Fallback: dialog.context.messageMode (snapshot at construction time).
+  if (dialog?.context?.messageMode) return dialog.context.messageMode;
+
+  // 3) Final fallback: user's default rollMode (Foundry standard) — try a
+  //    few candidate keys since PF2e/Foundry have used both names.
+  for (const key of ["rollMode", "messageMode"]) {
+    try {
+      const v = game?.settings?.get?.("core", key);
+      if (v) return v;
+    } catch {}
+  }
+  return "publicroll";
 }
 
 /**
@@ -115,6 +127,11 @@ export async function spawnTaskDiceForStore(store) {
   // Honor secret rolls: skip spawning entirely on clients that shouldn't see
   // the result, and never broadcast across socket when we do spawn.
   const secrecy = classifyRollSecrecy(store.dialog);
+  log("autoSpawn: classified roll secrecy", {
+    detectedMode: getDialogMessageMode(store.dialog),
+    classification: secrecy,
+    isGM: !!game.user?.isGM,
+  });
   if (secrecy.secret) {
     if (!secrecy.shouldSpawn) {
       log(`autoSpawn: secret roll (${secrecy.mode}); skipping spawn on this client`);
@@ -143,7 +160,12 @@ export async function spawnTaskDiceForStore(store) {
       const spawnOpts = { ownerUserId: game.user.id };
       if (secrecy.ceremonial) {
         const ghost = buildGhostAppearance(dieType);
-        if (ghost) spawnOpts.appearance = ghost;
+        if (ghost) {
+          spawnOpts.appearance = ghost;
+          log("autoSpawn: ghost appearance attached", { dieType, isGhost: ghost.isGhost });
+        } else {
+          warn(`autoSpawn: ghost appearance build failed for ${dieType} — falling back to normal die (player may see real value!)`);
+        }
       }
       const mesh = await dice3d.spawnPersistentDie(dieType, pos, spawnOpts, synchronize);
       if (!mesh) {

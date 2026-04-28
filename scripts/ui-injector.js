@@ -93,6 +93,7 @@ async function injectTray(app, $html) {
     }
 
     bindTrayHandlers(root, store);
+    bindMessageModeWatcher(root, store, app);
 
     // Replace any prior subscriber on this app so we don't accumulate listeners across re-renders
     if (app._dsnBridgeUnsub) { try { app._dsnBridgeUnsub(); } catch {} }
@@ -206,6 +207,39 @@ function bindTrayHandlers(root, store) {
       store.notify();
     })
   );
+}
+
+/**
+ * Watch the dialog's `<select name="messageMode">`. When the user flips it
+ * (e.g. GM changes "Public Roll" to "Blind Roll" before submitting), wipe
+ * the spawned task dice + reset secrecy state on the store and re-spawn
+ * according to the new mode. This is what lets the ghost-die flow trigger
+ * even if the dialog opened with `publicroll` as default.
+ */
+function bindMessageModeWatcher(root, store, app) {
+  const select = root.querySelector('select[name="messageMode"]');
+  if (!select) return;
+  if (store._modeWatcherBound) return;
+  store._modeWatcherBound = true;
+
+  select.addEventListener("change", async () => {
+    log("messageMode changed →", select.value, "; re-evaluating spawn");
+    try {
+      cleanupTaskDiceForStore(store);
+      // Reset state so the spawn helper recomputes secrecy.
+      delete store._secret;
+      delete store._ceremonial;
+      // Reset slot values too (a freshly opened mode shouldn't keep stale fills)
+      store.slots = store.slots.map((s) => ({
+        key: s.key, faces: s.faces, state: "empty", value: null, sourceMeshId: null,
+      }));
+      delete store._autoSubmitted;
+      await spawnTaskDiceForStore(store);
+      store.notify();
+    } catch (e) {
+      err("messageMode change handler failed", e);
+    }
+  });
 }
 
 function triggerSubmit(app, root) {
