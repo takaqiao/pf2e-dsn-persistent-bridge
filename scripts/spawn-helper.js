@@ -97,28 +97,40 @@ export function classifyRollSecrecy(dialog) {
  * face label with "?" in the rendered material.
  */
 /**
- * Remove a task die from DSN's persistent-dice flag so refresh doesn't
- * resurrect it. DSN normally writes every spawned die owned by the current
- * user into `user.flags["dice-so-nice"].persistentDice` for restoration on
- * reload. Task dice are session-only by design — a refresh while a dialog
- * is open should not leave the canvas littered with orphaned task meshes.
+ * Spawn a persistent die without ever writing it to DSN's per-user
+ * `persistentDice` flag. Task dice are session-only by design; a browser
+ * refresh while a dialog is open must NOT leave an orphan on the canvas.
  *
- * Touches DSN's private `_persistentDiceData` Map (the in-memory source
- * of truth that gets serialized to the flag). After we delete the entry
- * we trigger a re-save so the flag stops listing this die.
+ * Strategy: set DSN's internal `_restoringDice = true` flag for the
+ * duration of the spawn. DSN's `_savePersistentDiceToFlags()` short-circuits
+ * when that flag is set (it normally guards against writing during restore
+ * on page load) — so the spawn never reaches `game.user.setFlag(...)`.
+ * Then we also delete the entry from DSN's in-memory `_persistentDiceData`
+ * Map so any later save (from an unrelated user-spawned die) doesn't
+ * accidentally include our task die.
+ *
+ * The previous implementation called DSN's setFlag *after* spawn and
+ * relied on the second setFlag call to overwrite the first. That's
+ * fire-and-forget and races against a fast user refresh — exactly the
+ * "orphan after refresh" bug the user reported.
  */
-function stripFromDsnPersistFlag(persistentId) {
+async function spawnPersistentDieEphemeral(dice3d, dieType, position, opts, synchronize) {
+  const savedRestoring = dice3d._restoringDice;
+  dice3d._restoringDice = true;
+  let mesh;
   try {
-    const dice3d = game.dice3d;
-    if (!dice3d || !persistentId) return;
-    dice3d._persistentDiceData?.delete?.(persistentId);
-    // Re-save the (now smaller) map back to the user flag.
-    if (typeof dice3d._savePersistentDiceToFlags === "function") {
-      dice3d._savePersistentDiceToFlags();
+    mesh = await dice3d.spawnPersistentDie(dieType, position, opts, synchronize);
+    // While _restoringDice was true, _savePersistentDiceToFlags returned
+    // early — but DSN still added an entry to _persistentDiceData. Remove
+    // it so any future save (triggered by an unrelated decorative spawn)
+    // doesn't pick it up.
+    if (mesh?.userData?.persistentId) {
+      dice3d._persistentDiceData?.delete?.(mesh.userData.persistentId);
     }
-  } catch (e) {
-    warn("stripFromDsnPersistFlag failed", e);
+  } finally {
+    dice3d._restoringDice = savedRestoring;
   }
+  return mesh;
 }
 
 function buildGhostAppearance(dieType) {
@@ -234,7 +246,7 @@ export async function spawnTaskDiceForStore(store) {
           warn(`autoSpawn: ghost appearance build failed for ${dieType} — falling back to normal die (player may see real value!)`);
         }
       }
-      const mesh = await dice3d.spawnPersistentDie(dieType, pos, spawnOpts, synchronize);
+      const mesh = await spawnPersistentDieEphemeral(dice3d, dieType, pos, spawnOpts, synchronize);
       if (!mesh) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
@@ -267,11 +279,8 @@ export async function spawnTaskDiceForStore(store) {
           openerUserId: game.user.id,
         });
       }
-      // Strip this task die from DSN's per-user "persistentDice" flag so a
-      // browser refresh while the dialog is open doesn't leave an orphan
-      // mesh on the canvas. Without this, DSN re-spawns it on every reload
-      // because it thinks the user wanted a permanent decorative die there.
-      stripFromDsnPersistFlag(mesh.userData.persistentId);
+      // (No persistence stripping needed — spawnPersistentDieEphemeral
+      // already prevented DSN from writing this die to the user flag.)
       mesh.userData.dsnPF2eBridge_dialogId = store.dialogId;
       // Always tag as owned now: the listener consumes the value and the
       // wrapper injects it into PF2e's Roll, ensuring the mesh face the
