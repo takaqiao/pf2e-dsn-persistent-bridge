@@ -1,0 +1,88 @@
+{
+  "pf2e-dsn-persistent-bridge": {
+    "tray": {
+      "header": "Persistent Dice",
+      "noDice": "No dice to roll for this formula.",
+      "disabledBanner": "Dice So Nice persistent dice are not active. Rolls will use RNG.",
+      "hint": "Throw your DSN persistent dice on the canvas. Filled values will be used. Empty slots fall back to RNG.",
+      "clearAll": "Clear",
+      "clearAllTooltip": "Clear all unlocked slots",
+      "rngAll": "RNG All",
+      "rngAllTooltip": "Reset all unlocked slots and let PF2e roll them randomly",
+      "lock": "Lock this die",
+      "unlock": "Unlock this die",
+      "resetSlotTooltip": "Clear this slot",
+      "accessLocked": "Mine only",
+      "accessUnlocked": "Anyone",
+      "lockAccessTooltip": "Re-lock — other players cannot drag the task dice for this roll",
+      "unlockAccessTooltip": "Unlock — let any player drag the task dice for this roll (this dialog only; next dialog re-locks automatically)"
+    },
+    "settings": {
+      "enabled": {
+        "name": "Enable bridge",
+        "hint": "Master toggle for the PF2e × DSN persistent dice bridge."
+      },
+      "requireAllSlots": {
+        "name": "Require all slots filled",
+        "hint": "When enabled, the dialog falls back to pure RNG if any slot is empty at submit time. Default off — partial submission uses persistent dice for filled slots and RNG for the rest."
+      },
+      "consumeAnyOwner": {
+        "name": "Consume any player's dice",
+        "hint": "When enabled, your dialog can match persistent dice rolled by any user (cooperative play). Default off — only your own thrown dice fill your slots."
+      },
+      "autoSpawnDice": {
+        "name": "Auto-spawn task dice",
+        "hint": "Default on. When a PF2e check / damage dialog opens, automatically spawn the needed persistent dice (e.g. 1× d20, 3× d6) onto the canvas. They are cleaned up when the dialog closes. Disable to spawn dice manually."
+      },
+      "onlyConsumeOwned": {
+        "name": "Only consume module-spawned dice",
+        "hint": "Default on. Only persistent dice that the module spawned itself ('task dice') feed into roll dialog slots. Dice you spawn manually are free decoration and never get pulled into a roll. Disable to let any persistent die feed any open dialog."
+      },
+      "hideDecorativeDuringDialog": {
+        "name": "Hide decorative dice during dialog",
+        "hint": "Default on. While a check / damage dialog is open, your manually-spawned decorative dice are visually hidden from the canvas, leaving only the task dice you need to throw. They reappear when the dialog closes."
+      },
+      "taskDiceLockedByDefault": {
+        "name": "Lock task dice to dialog opener by default",
+        "hint": "Default on. Each task die spawned for a roll dialog is locked to the player who opened the dialog — other players cannot drag, Ctrl+click, or throw it. Each dialog re-locks fresh; you can manually unlock for the current dialog via the 'Mine only' button at the top of the tray. Disable to keep task dice freely interactive for everyone."
+      },
+      "suppressDsnThrowMessage": {
+        "name": "Suppress standalone DSN throw message",
+        "hint": "Default on. While a check / damage dialog is open, the standalone 'You rolled X' chat message DSN normally posts for a persistent throw is redundant — the user already saw the dice physically roll, and the PF2e check result message contains the value. With this on, that standalone message is suppressed; the PF2e check message is the only chat output. Standalone throws (no dialog open) are unaffected and keep their message."
+      },
+      "settleBufferMs": {
+        "name": "Settle buffer (ms)",
+        "hint": "DSN's physics engine declares the throw 'finished' a few hundred ms before the dice visually stop tumbling. This is how long we wait *after* that signal before recording the result, so the slot fills at the moment the die actually looks stopped. Default 1500ms. Increase if it still feels too fast (try 2500-3000), decrease if it feels sluggish."
+      },
+      "matchPriority": {
+        "name": "Slot match priority",
+        "hint": "How to choose which open dialog gets a freshly-thrown die when multiple match.",
+        "choices": {
+          "byType": "By die type only (first dialog wins)",
+          "byOwnerThenType": "Prefer dialog whose owner rolled the die",
+          "fifoStrict": "First-opened dialog wins"
+        }
+      },
+      "applyToReroll": {
+        "name": "Apply to rerolls",
+        "hint": "Use unconsumed persistent dice on the canvas as input for hero-point / fortune rerolls. Throw the new die first, then click reroll."
+      },
+      "autoSubmitOnFill": {
+        "name": "Auto-submit when all slots filled",
+        "hint": "Default on. When every slot has a value from a thrown persistent die, the dialog auto-clicks the Roll button. Disable to keep manual control of submission timing (e.g. tweak modifiers after rolling)."
+      },
+      "autoSubmitDelayMs": {
+        "name": "Auto-submit delay (ms)",
+        "hint": "How long to wait after the last slot is filled before auto-submitting. Default 900ms — gives you time to see the result and the slot turning green before the dialog closes. 0 = instant, 5000 = 5 seconds."
+      },
+      "showLockButton": {
+        "name": "Show lock button",
+        "hint": "Default off. Adds a lock/unlock button to each slot. A locked slot is preserved when 'Clear All' is used and won't be overwritten by newly-thrown dice. Most users don't need this."
+      },
+      "suppressRedundantDsn": {
+        "name": "Suppress redundant dice animation",
+        "hint": "Default on. Without this, PF2e re-asks DSN to show the same dice flying in again after submission, even though you already threw them physically on the canvas. Keep on to skip the duplicate animation."
+      }
+    }
+  }
+}

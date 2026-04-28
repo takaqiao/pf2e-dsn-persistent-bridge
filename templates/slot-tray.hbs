@@ -1,0 +1,51 @@
+<section class="dsn-bridge-tray" data-app-id="{{appId}}">
+    <header class="dsn-tray-head">
+        <span class="dsn-title">
+            <i class="fa-solid fa-dice-d20"></i>
+            {{localize "pf2e-dsn-persistent-bridge.tray.header"}}
+        </span>
+        {{#if showAccessToggle}}
+            <button type="button" class="dsn-access-toggle {{#if accessLocked}}is-locked{{else}}is-unlocked{{/if}}"
+                    data-action="dsn-toggle-access"
+                    data-tooltip="{{accessTooltip}}">
+                <i class="fa-solid {{accessIcon}}"></i>
+                <span class="dsn-access-label">{{accessLabel}}</span>
+            </button>
+        {{/if}}
+    </header>
+
+    {{#if disabled}}
+        <div class="dsn-banner dsn-banner-warn">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            {{localize "pf2e-dsn-persistent-bridge.tray.disabledBanner"}}
+        </div>
+    {{else if isEmpty}}
+        <div class="dsn-banner">{{localize "pf2e-dsn-persistent-bridge.tray.noDice"}}</div>
+    {{else}}
+        <div class="dsn-slots">
+            {{#each slots}}
+                <div class="dsn-slot state-{{state}}" data-slot-key="{{key}}" data-faces="{{faces}}">
+                    <div class="dsn-slot-tag">d{{faces}}</div>
+                    <div class="dsn-slot-face">
+                        {{#if value}}
+                            <span class="dsn-slot-value">{{value}}</span>
+                        {{else}}
+                            <span class="dsn-slot-placeholder">
+                                <i class="fa-solid fa-circle-notch fa-spin"></i>
+                            </span>
+                        {{/if}}
+                    </div>
+                    {{#if ../showLock}}
+                        <div class="dsn-slot-controls">
+                            <button type="button" class="dsn-mini" data-action="dsn-toggle-lock" data-key="{{key}}"
+                                    data-tooltip="{{lockTooltip}}">
+                                <i class="fa-solid {{lockIcon}}"></i>
+                            </button>
+                        </div>
+                    {{/if}}
+                </div>
+            {{/each}}
+        </div>
+        <p class="dsn-hint">{{localize "pf2e-dsn-persistent-bridge.tray.hint"}}</p>
+    {{/if}}
+</section>

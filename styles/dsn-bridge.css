@@ -1,0 +1,216 @@
+/* PF2e × DSN Persistent Dice Bridge — slot tray
+ * Visual goal: each slot is a small rounded "die card" — not a blue bar.
+ * Three states: empty (dashed, pulsing, hourglass icon), filled (solid green, big number),
+ * locked (solid amber, lock icon visible).
+ */
+
+.dsn-bridge-tray {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.4rem 0.4rem;
+  border-top: 1px dashed var(--color-border-light-2, #b8aa8a);
+  font-family: var(--font-primary, "Signika", sans-serif);
+}
+
+.dsn-tray-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  font-size: 0.9em;
+}
+
+.dsn-tray-head .dsn-title {
+  font-weight: 600;
+  color: var(--color-text-dark-primary, #4b4a44);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dsn-tray-head .dsn-title i { color: #6a4ca8; }
+
+.dsn-tray-head .dsn-actions { display: inline-flex; gap: 4px; }
+
+.dsn-access-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 0.78em;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--color-border-light-2, #b8aa8a);
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.dsn-access-toggle.is-locked {
+  background: rgba(220, 150, 30, 0.15);
+  border-color: #c5891e;
+  color: #7a4d00;
+}
+.dsn-access-toggle.is-unlocked {
+  background: rgba(72, 176, 128, 0.10);
+  border-color: #3f8f64;
+  color: #1f5a3a;
+}
+.dsn-access-toggle:hover { filter: brightness(1.05); }
+
+.dsn-bridge-tray .dsn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--color-border-light-2, #b8aa8a);
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+  font-size: 0.85em;
+  transition: background 0.12s, border-color 0.12s;
+}
+.dsn-bridge-tray .dsn-btn:hover { background: rgba(0, 0, 0, 0.1); border-color: #888; color: #222; }
+
+.dsn-bridge-tray .dsn-banner {
+  padding: 0.5em 0.6em;
+  text-align: center;
+  font-style: italic;
+  color: #666;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+.dsn-bridge-tray .dsn-banner-warn {
+  background: rgba(255, 165, 0, 0.12);
+  color: #8a4500;
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  font-style: normal;
+}
+
+/* Slot grid */
+.dsn-bridge-tray .dsn-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+  margin: 4px 0;
+}
+
+/* Each slot: a small "die card" with two rows (tag / face).
+ * Controls (lock button) appear only when enabled in settings, in a third row. */
+.dsn-slot {
+  position: relative;
+  display: grid;
+  grid-template-rows: 14px 1fr;
+  align-items: center;
+  justify-items: center;
+  height: 60px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1.5px solid var(--color-border-light-2, #b8aa8a);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.0)),
+    rgba(0, 0, 0, 0.03);
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08), 0 1px 1px rgba(0,0,0,0.04);
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+}
+.dsn-slot:has(.dsn-slot-controls) {
+  grid-template-rows: 14px 1fr 18px;
+  height: 78px;
+}
+
+.dsn-slot-tag {
+  font-family: var(--font-monospace, "Courier New", monospace);
+  font-size: 0.72em;
+  letter-spacing: 0.04em;
+  color: #777;
+  text-transform: lowercase;
+}
+
+.dsn-slot-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 30px;
+}
+
+.dsn-slot-value {
+  font-family: var(--font-primary, "Signika", sans-serif);
+  font-weight: 700;
+  font-size: 1.55em;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+}
+
+.dsn-slot-placeholder {
+  color: rgba(110, 110, 110, 0.55);
+  font-size: 1.1em;
+}
+
+.dsn-slot-controls {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+/* State: empty — dashed outline + soft pulse, no big bar */
+.dsn-slot.state-empty {
+  border-style: dashed;
+  border-color: rgba(120, 120, 120, 0.55);
+  background: rgba(255, 255, 255, 0.18);
+  animation: dsn-pulse 1.8s ease-in-out infinite;
+}
+.dsn-slot.state-empty .dsn-slot-value,
+.dsn-slot.state-empty .dsn-slot-placeholder { color: rgba(120, 120, 120, 0.65); }
+
+/* State: filled — green frame + bold number */
+.dsn-slot.state-filled {
+  border-color: #3f8f64;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0.0)),
+    rgba(72, 176, 128, 0.12);
+}
+.dsn-slot.state-filled .dsn-slot-value { color: #1f5a3a; }
+
+/* State: locked — amber frame + bold number + subtle glow */
+.dsn-slot.state-locked {
+  border-color: #c5891e;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.0)),
+    rgba(220, 150, 30, 0.16);
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08), 0 0 5px rgba(197, 137, 30, 0.35);
+}
+.dsn-slot.state-locked .dsn-slot-value { color: #7a4d00; }
+
+@keyframes dsn-pulse {
+  0%, 100% { box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08), 0 0 0 0 rgba(106, 76, 168, 0); }
+  50%      { box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08), 0 0 6px 0 rgba(106, 76, 168, 0.45); }
+}
+
+.dsn-slot:hover { transform: translateY(-1px); }
+
+.dsn-mini {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 1px 4px;
+  font-size: 0.78em;
+  color: #666;
+  border-radius: 3px;
+  line-height: 1;
+}
+.dsn-mini:hover { background: rgba(0, 0, 0, 0.08); color: #222; }
+
+.dsn-bridge-tray .dsn-hint {
+  margin: 6px 0 0;
+  font-size: 0.78em;
+  color: #888;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Override: if PF2e dialog gives buttons a default block style, we want our btn group horizontal.
+   Some PF2e themes apply width:100% to buttons inside .dialog forms; counter that here. */
+.dsn-bridge-tray button.dsn-btn,
+.dsn-bridge-tray button.dsn-mini { width: auto; flex: 0 0 auto; }

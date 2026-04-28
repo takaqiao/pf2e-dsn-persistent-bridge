@@ -1,0 +1,66 @@
+{
+  "id": "pf2e-dsn-persistent-bridge",
+  "title": "PF2e × DSN Persistent Dice Bridge",
+  "description": "Use Dice So Nice persistent dice you physically roll on the canvas as the input for PF2e check / damage / reroll dialogs.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "taka.wang"
+    }
+  ],
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/dsn-bridge.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "zh-CN",
+      "name": "中文 (简体)",
+      "path": "lang/zh-CN.json"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "pf2e",
+        "type": "system",
+        "compatibility": {
+          "verified": "7"
+        }
+      }
+    ],
+    "requires": [
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "manifest": "https://github.com/ruipin/fvtt-lib-wrapper/releases/latest/download/module.json",
+        "compatibility": { "minimum": "1.13" }
+      }
+    ],
+    "recommends": [
+      {
+        "id": "dice-so-nice",
+        "type": "module",
+        "reason": "Provides persistent dice physics on the canvas; without it this module silently disables itself."
+      }
+    ]
+  },
+  "socket": true,
+  "url": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge",
+  "manifest": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest/download/module.json",
+  "download": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/download/v0.1.0/module.zip",
+  "bugs": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/issues",
+  "readme": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge#readme",
+  "changelog": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/blob/main/CHANGELOG.md"
+}
