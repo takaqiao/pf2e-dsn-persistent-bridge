@@ -11,6 +11,8 @@
       "clearAllTooltip": "清空所有未锁定的槽",
       "rngAll": "全 RNG",
       "rngAllTooltip": "把所有未锁定的槽交给 PF2e 系统随机产生",
+      "selectAll": "全选",
+      "selectAllTooltip": "选中本次所有任务骰子,可以一次性拖拽全部扔出(等价于 Ctrl+点击每个骰子)",
       "lock": "锁定此骰",
       "unlock": "解锁此骰",
       "resetSlotTooltip": "清空此槽",
@@ -47,6 +49,10 @@
       "taskDiceLockedByDefault": {
         "name": "任务骰默认上锁(仅自己)",
         "hint": "默认开启。每次打开检定框生成的任务骰子默认锁定到打开者,其他玩家拖不动、Ctrl+点也无效。每个对话框都默认上锁,需要手动点 tray 顶部的'仅自己可扔'按钮解锁(下次开新检定又会自动锁回)。关闭后任务骰子任何人都能交互。"
+      },
+      "autoSelectAllOnSpawn": {
+        "name": "生成后自动全选骰子",
+        "hint": "默认关闭。开启后,每次检定框打开生成任务骰子时,自动选中所有骰子(等同于点'全选'按钮)。这样你可以直接拖动一次扔出所有骰子,不用 Ctrl+点击每颗。多骰检定(伤害)特别有用。"
       },
       "respectSecretRolls": {
         "name": "尊重暗骰",

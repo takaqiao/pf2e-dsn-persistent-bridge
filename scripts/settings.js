@@ -46,6 +46,15 @@ export function registerSettings() {
     default: true,
   });
 
+  game.settings.register(MOD_ID, SETTINGS.autoSelectAllOnSpawn, {
+    name: `${MOD_ID}.settings.autoSelectAllOnSpawn.name`,
+    hint: `${MOD_ID}.settings.autoSelectAllOnSpawn.hint`,
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   game.settings.register(MOD_ID, SETTINGS.respectSecretRolls, {
     name: `${MOD_ID}.settings.respectSecretRolls.name`,
     hint: `${MOD_ID}.settings.respectSecretRolls.hint`,

@@ -15,6 +15,7 @@ export const SETTINGS = {
   suppressDsnThrowMessage: "suppressDsnThrowMessage",
   taskDiceLockedByDefault: "taskDiceLockedByDefault",
   respectSecretRolls: "respectSecretRolls",
+  autoSelectAllOnSpawn: "autoSelectAllOnSpawn",
 };
 
 export const PENDING_TTL_MS = 8000;

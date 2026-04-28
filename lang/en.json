@@ -11,6 +11,8 @@
       "clearAllTooltip": "Clear all unlocked slots",
       "rngAll": "RNG All",
       "rngAllTooltip": "Reset all unlocked slots and let PF2e roll them randomly",
+      "selectAll": "Select all",
+      "selectAllTooltip": "Select every task die for this roll so you can throw them all in one drag (equivalent to Ctrl+clicking each).",
       "lock": "Lock this die",
       "unlock": "Unlock this die",
       "resetSlotTooltip": "Clear this slot",
@@ -47,6 +49,10 @@
       "taskDiceLockedByDefault": {
         "name": "Lock task dice to dialog opener by default",
         "hint": "Default on. Each task die spawned for a roll dialog is locked to the player who opened the dialog — other players cannot drag, Ctrl+click, or throw it. Each dialog re-locks fresh; you can manually unlock for the current dialog via the 'Mine only' button at the top of the tray. Disable to keep task dice freely interactive for everyone."
+      },
+      "autoSelectAllOnSpawn": {
+        "name": "Auto-select all dice on spawn",
+        "hint": "Default off. When on, every task die spawned for a dialog is auto-selected (same as clicking 'Select all'). You can then throw them all in a single drag instead of Ctrl+clicking each individually. Especially useful for multi-die damage rolls."
       },
       "respectSecretRolls": {
         "name": "Respect secret rolls",

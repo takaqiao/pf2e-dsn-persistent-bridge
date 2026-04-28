@@ -29,6 +29,22 @@
 .dsn-tray-head .dsn-title i { color: #6a4ca8; }
 
 .dsn-tray-head .dsn-actions { display: inline-flex; gap: 4px; }
+.dsn-tray-head .dsn-tray-actions { display: inline-flex; gap: 4px; align-items: center; }
+
+.dsn-tray-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 0.78em;
+  background: rgba(80, 100, 200, 0.10);
+  border: 1px solid rgba(80, 100, 200, 0.4);
+  border-radius: 4px;
+  cursor: pointer;
+  color: #2a3380;
+  transition: filter 0.12s;
+}
+.dsn-tray-btn:hover { filter: brightness(1.08); }
 
 .dsn-access-toggle {
   display: inline-flex;

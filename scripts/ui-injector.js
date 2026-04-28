@@ -9,6 +9,7 @@ import {
   restoreDecorativeDiceIfNoActiveDialogs,
   raiseDsnCanvasAboveAll,
   toggleTaskDiceLock,
+  selectAllTaskDice,
 } from "./spawn-helper.js";
 
 const TEMPLATE = `modules/${MOD_ID}/templates/slot-tray.hbs`;
@@ -157,6 +158,9 @@ async function renderTrayHTML(app, store) {
     secretSkipped,
     ceremonialGhost,
     isEmpty: store.slots.length === 0,
+    showSelectAll: store.slots.length > 1, // only useful with 2+ dice
+    selectAllTooltip: game.i18n.localize(`${MOD_ID}.tray.selectAllTooltip`),
+    selectAllLabel: game.i18n.localize(`${MOD_ID}.tray.selectAll`),
     showAccessToggle: lockingEnabled && store.slots.length > 0,
     accessLocked: !isUnlocked,
     accessIcon: isUnlocked ? "fa-lock-open" : "fa-lock",
@@ -207,6 +211,15 @@ function bindTrayHandlers(root, store) {
       ev.preventDefault();
       toggleTaskDiceLock(store);
       store.notify();
+    })
+  );
+
+  // Select-all: select every task die spawned for this dialog so the user
+  // can throw them all in one drag instead of Ctrl+clicking each.
+  tray.querySelectorAll('[data-action="dsn-select-all"]').forEach((b) =>
+    b.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      selectAllTaskDice(store);
     })
   );
 }

@@ -4,14 +4,24 @@
             <i class="fa-solid fa-dice-d20"></i>
             {{localize "pf2e-dsn-persistent-bridge.tray.header"}}
         </span>
-        {{#if showAccessToggle}}
-            <button type="button" class="dsn-access-toggle {{#if accessLocked}}is-locked{{else}}is-unlocked{{/if}}"
-                    data-action="dsn-toggle-access"
-                    data-tooltip="{{accessTooltip}}">
-                <i class="fa-solid {{accessIcon}}"></i>
-                <span class="dsn-access-label">{{accessLabel}}</span>
-            </button>
-        {{/if}}
+        <span class="dsn-tray-actions">
+            {{#if showSelectAll}}
+                <button type="button" class="dsn-tray-btn dsn-select-all"
+                        data-action="dsn-select-all"
+                        data-tooltip="{{selectAllTooltip}}">
+                    <i class="fa-solid fa-object-group"></i>
+                    <span>{{selectAllLabel}}</span>
+                </button>
+            {{/if}}
+            {{#if showAccessToggle}}
+                <button type="button" class="dsn-access-toggle {{#if accessLocked}}is-locked{{else}}is-unlocked{{/if}}"
+                        data-action="dsn-toggle-access"
+                        data-tooltip="{{accessTooltip}}">
+                    <i class="fa-solid {{accessIcon}}"></i>
+                    <span class="dsn-access-label">{{accessLabel}}</span>
+                </button>
+            {{/if}}
+        </span>
     </header>
 
     {{#if disabled}}

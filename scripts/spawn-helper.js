@@ -312,6 +312,13 @@ export async function spawnTaskDiceForStore(store) {
   store._spawnedMeshIds = spawnedIds;
   log(`autoSpawn: created ${spawnedIds.length} task dice for dialog ${store.dialogId}`);
 
+  // Auto-select all freshly-spawned task dice so the user can throw them
+  // in one drag instead of Ctrl+clicking each one. Only on the opener's
+  // client (mirror meshes on receivers don't get selected).
+  if (getSetting(SETTINGS.autoSelectAllOnSpawn) === true) {
+    selectAllTaskDice(store);
+  }
+
   // After spawn, re-raise the DSN canvas above the just-opened PF2e dialog.
   // DSN's spawnPersistentDie internally calls `_beforeShow()` which raises
   // the canvas, but PF2e's ApplicationV2 dialog mounts AFTER that and bumps
@@ -343,6 +350,36 @@ export function raiseDsnCanvasAboveAll() {
       canvasEl.style.zIndex = "950"; // generic safe fallback
     }
   } catch {}
+}
+
+/**
+ * Select every task die spawned for this dialog using DSN's native multi-
+ * select (the same machinery as Ctrl+click). The user can then throw all
+ * of them in one drag-and-flick motion instead of Ctrl+clicking each die
+ * individually. Optionally fired automatically right after spawn when the
+ * `autoSelectAllOnSpawn` setting is on.
+ */
+export function selectAllTaskDice(store) {
+  const ids = new Set(store?._spawnedMeshIds ?? []);
+  if (ids.size === 0) return 0;
+  const box = game.dice3d?.box;
+  const pdm = box?.persistentDiceManager;
+  if (!pdm?.selectedPersistentDiceIds) return 0;
+
+  let added = 0;
+  for (const mesh of box.persistentDiceList ?? []) {
+    if (!ids.has(mesh?.userData?.persistentId)) continue;
+    if (mesh.userData?.dsnPF2eBridge_secretMirror) continue; // mirrors are display-only on receivers
+    if (!pdm.selectedPersistentDiceIds.has(mesh.id)) {
+      pdm.selectedPersistentDiceIds.add(mesh.id);
+      added++;
+    }
+  }
+  if (added > 0 && typeof pdm.onSelectionChanged === "function") {
+    pdm.onSelectionChanged();
+  }
+  log(`select-all: selected ${added} task dice for dialog ${store.dialogId}`);
+  return added;
 }
 
 /**
