@@ -9,9 +9,11 @@
   },
   "authors": [
     {
-      "name": "taka.wang"
+      "name": "takaqiao",
+      "url": "https://github.com/takaqiao"
     }
   ],
+  "license": "MIT",
   "esmodules": [
     "scripts/main.js"
   ],

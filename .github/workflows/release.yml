@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read tag version
+        id: version
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Verify module.json version matches tag
+        run: |
+          MJ_VERSION=$(jq -r .version module.json)
+          if [ "$MJ_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::module.json version ($MJ_VERSION) != tag (${{ steps.version.outputs.version }})"
+            exit 1
+          fi
+          echo "module.json version matches tag: $MJ_VERSION"
+
+      - name: Verify download URL points to this tag
+        run: |
+          DOWNLOAD=$(jq -r .download module.json)
+          EXPECTED=".*/releases/download/${{ steps.version.outputs.tag }}/module.zip"
+          if ! echo "$DOWNLOAD" | grep -qE "$EXPECTED"; then
+            echo "::error::module.json download URL ($DOWNLOAD) does not point to ${{ steps.version.outputs.tag }}"
+            exit 1
+          fi
+          echo "download URL ok: $DOWNLOAD"
+
+      - name: Build module.zip
+        run: |
+          # Foundry expects module.json at the zip root, not inside a subdir.
+          zip -r module.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x ".gitignore" \
+            -x "scripts-dev/*" \
+            -x "*.zip" \
+            -x ".DS_Store" \
+            -x "Thumbs.db"
+          ls -la module.zip
+          unzip -l module.zip | head -30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body_path: .github/release-body-template.md
+          fail_on_unmatched_files: true
+          files: |
+            module.json
+            module.zip

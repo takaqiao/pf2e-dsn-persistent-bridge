@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Foundry packages page
+    url: https://foundryvtt.com/packages/pf2e-dsn-persistent-bridge
+    about: Check the Foundry package listing for general info.

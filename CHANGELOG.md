@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Repo / packaging
+
+- Added GitHub Actions release workflow (`.github/workflows/release.yml`):
+  pushing a `v*` tag now auto-builds `module.zip` and publishes the GitHub
+  release with `module.json` + `module.zip` as assets.
+- Added `scripts-dev/release.sh` helper for one-command version bumps
+  (`./scripts-dev/release.sh patch` etc.).
+- Added issue templates (bug report, feature request) and a PR template.
+- Added `license: "MIT"` to `module.json` (SPDX identifier).
+- Added Foundry package submission walkthrough at
+  `.github/FOUNDRY_PACKAGES_SUBMISSION.md`.
+
 ## 0.1.0 — 2026-04-28
 
 Initial release.

@@ -1,0 +1,74 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more concrete you are, the
+        faster this gets fixed.
+
+  - type: input
+    id: foundry-version
+    attributes:
+      label: Foundry VTT version
+      placeholder: "e.g. 14.345"
+    validations:
+      required: true
+
+  - type: input
+    id: pf2e-version
+    attributes:
+      label: PF2e system version
+      placeholder: "e.g. 7.5.2"
+    validations:
+      required: true
+
+  - type: input
+    id: dsn-version
+    attributes:
+      label: Dice So Nice! version
+      placeholder: "e.g. 6.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: bridge-version
+    attributes:
+      label: pf2e-dsn-persistent-bridge version
+      placeholder: "e.g. 0.1.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect, what did you see?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps the maintainer can follow.
+      placeholder: |
+        1. Open an Athletics check dialog on a PC.
+        2. Throw the spawned d20.
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output
+      description: F12 → Console. Paste any `[PF2e×DSN]` lines plus any red errors.
+      render: text
+
+  - type: textarea
+    id: other-modules
+    attributes:
+      label: Other active modules (optional)
+      description: Anything that might interact with rolls or DSN.
