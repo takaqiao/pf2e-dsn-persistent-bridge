@@ -264,7 +264,12 @@
   font-style: italic;
 }
 
-/* Override: if PF2e dialog gives buttons a default block style, we want our btn group horizontal.
-   Some PF2e themes apply width:100% to buttons inside .dialog forms; counter that here. */
-.dsn-bridge-tray button.dsn-btn,
-.dsn-bridge-tray button.dsn-mini { width: auto; flex: 0 0 auto; }
+/* Override: PF2e dialog gives every form button width:100% by default,
+   which stretches our small inline buttons across the row. Force every
+   button inside the tray back to content-sized + flex: 0 0 auto. */
+.dsn-bridge-tray button {
+  width: auto !important;
+  flex: 0 0 auto !important;
+  min-width: 0;
+  line-height: 1;
+}
