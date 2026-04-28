@@ -66,3 +66,66 @@ jobs:
           files: |
             module.json
             module.zip
+
+      # Notify the Foundry packages registry so the package page on
+      # foundryvtt.com gets the new version, lastUpdated date, and a
+      # release announcement on the Foundry Discord.
+      #
+      # Notes:
+      # - Per Foundry docs, `manifest` here must point to the SPECIFIC
+      #   release's module.json (not the `latest` redirect that lives in
+      #   our package's manifest field).
+      # - `compatibility.minimum` / `verified` are read from module.json
+      #   so a future bump in the manifest automatically updates the
+      #   compatibility window we tell Foundry about.
+      # - We pull the secret only at this step and only into env so it
+      #   never appears in command logs.
+      - name: Publish to Foundry packages registry
+        env:
+          FOUNDRY_RELEASE_TOKEN: ${{ secrets.FOUNDRY_RELEASE_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Forks without the secret simply skip this step rather than failing
+          # the whole workflow. (GitHub disallows referencing `secrets.*` in
+          # `if:` so we gate inside the step body instead.)
+          if [ -z "${FOUNDRY_RELEASE_TOKEN}" ]; then
+            echo "FOUNDRY_RELEASE_TOKEN secret not set; skipping Foundry packages publish."
+            exit 0
+          fi
+          MIN=$(jq -r '.compatibility.minimum // ""' module.json)
+          VER=$(jq -r '.compatibility.verified // ""' module.json)
+          MAX=$(jq -r '.compatibility.maximum // ""' module.json)
+          ID=$(jq -r '.id' module.json)
+          MANIFEST_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/module.json"
+          NOTES_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+
+          BODY=$(jq -n \
+            --arg id "$ID" \
+            --arg version "$VERSION" \
+            --arg manifest "$MANIFEST_URL" \
+            --arg notes "$NOTES_URL" \
+            --arg minimum "$MIN" \
+            --arg verified "$VER" \
+            --arg maximum "$MAX" \
+            '{
+              id: $id,
+              release: {
+                version: $version,
+                manifest: $manifest,
+                notes: $notes,
+                compatibility: ({
+                  minimum: $minimum,
+                  verified: $verified
+                } + (if $maximum != "" then {maximum: $maximum} else {} end))
+              }
+            }')
+
+          echo "Posting to Foundry packages API…"
+          # -f makes curl exit non-zero on 4xx/5xx so the workflow fails on error
+          RESP=$(curl -sS --fail-with-body \
+            -X POST https://foundryvtt.com/_api/packages/release_version/ \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${FOUNDRY_RELEASE_TOKEN}" \
+            -d "$BODY")
+          echo "Foundry API response: $RESP"
