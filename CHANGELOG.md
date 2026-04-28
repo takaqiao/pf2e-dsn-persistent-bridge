@@ -4,6 +4,7 @@
 
 ### Features
 
+- **Blind-roll ghost ceremony.** When a player opens a `blindroll` dialog, instead of skipping spawn entirely the module now generates a **ghost task die locally**: every face of that physical die renders as "?" so the player can drag and throw it for the ritual feel without ever seeing the value. The ghost die is intentionally NOT tagged as module-owned, so its result is ignored — PF2e's check still uses pure system RNG, and the actual outcome stays visible only to the GM. Result leak is impossible because the player physically cannot read the face.
 - **Secret rolls are now honored.** When a PF2e dialog uses `gmroll` / `blindroll` / `selfroll`, the module behaves correctly:
   - Task dice are spawned only on the client that should see the result (GM for `gmroll`/`blindroll`, opener for `selfroll`).
   - Never broadcast across socket, so other players don't see the dice physically land on their canvas (no result leak).

@@ -5,6 +5,7 @@
       "noDice": "No dice to roll for this formula.",
       "disabledBanner": "Dice So Nice persistent dice are not active. Rolls will use RNG.",
       "secretBanner": "Secret roll — you won't see the dice result. Falling back to system RNG.",
+      "ceremonialBanner": "Blind ritual — the ghost dice on canvas show \"?\" on every face. Throw them for the feel; the real result happens via system RNG on the GM's side.",
       "hint": "Throw your DSN persistent dice on the canvas. Filled values will be used. Empty slots fall back to RNG.",
       "clearAll": "Clear",
       "clearAllTooltip": "Clear all unlocked slots",

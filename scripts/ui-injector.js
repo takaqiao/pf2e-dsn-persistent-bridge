@@ -147,11 +147,15 @@ async function renderTrayHTML(app, store) {
   const isUnlocked = store._unlocked === true;
   // Secret rolls where the current client doesn't get task dice spawn:
   // show a clear banner instead of a confused empty tray.
-  const secretSkipped = store._secret === true && (store._spawnedMeshIds?.length ?? 0) === 0;
+  const secretSkipped = store._secret === true
+    && store._ceremonial !== true
+    && (store._spawnedMeshIds?.length ?? 0) === 0;
+  const ceremonialGhost = store._ceremonial === true;
   const data = {
     appId: app.appId,
     disabled: !dsnReady,
     secretSkipped,
+    ceremonialGhost,
     isEmpty: store.slots.length === 0,
     showLock,
     showAccessToggle: lockingEnabled && store.slots.length > 0,

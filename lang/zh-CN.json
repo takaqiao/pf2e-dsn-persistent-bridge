@@ -5,6 +5,7 @@
       "noDice": "本次掷骰公式无需投骰。",
       "disabledBanner": "Dice So Nice 持续骰子未启用,本次将使用随机数。",
       "secretBanner": "暗骰模式 — 你不会看到骰子结果。模块已自动让位给系统随机数。",
+      "ceremonialBanner": "暗骰仪式 — 画布上的鬼骰每面都是 \"?\",你扔了纯仪式感,真实结果在 GM 那里走系统随机。",
       "hint": "在画布上扔出 DSN 持续骰子,填充的值会被采用;空槽位将由系统自动随机。",
       "clearAll": "清空",
       "clearAllTooltip": "清空所有未锁定的槽",

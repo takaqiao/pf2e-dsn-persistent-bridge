@@ -32,26 +32,49 @@ export function classifyRollSecrecy(dialog) {
   }
 
   const isGM = !!game.user?.isGM;
-  if (mode === "gmroll" || mode === "blindroll") {
-    return {
-      secret: true,
-      mode,
-      shouldSpawn: isGM,
-      shouldSync: false,
-    };
+  if (mode === "gmroll") {
+    // GM-only chat. Spawn a real die for the GM, nothing for players.
+    return { secret: true, mode, shouldSpawn: isGM, shouldSync: false, ceremonial: false };
+  }
+  if (mode === "blindroll") {
+    // GM sees the real value; everyone else (including the player who opened
+    // the dialog) is supposed to be blind. Instead of skipping spawn for
+    // non-GM, give them a CEREMONIAL ghost die: they can throw it physically
+    // for the ritual feel, but every face shows "?" so they can't read the
+    // result. The ceremonial mesh is not tagged as `dsnPF2eBridge_owned`,
+    // so the slot-fill / evaluate-injection pipeline ignores it — PF2e ends
+    // up using its own RNG, fully independent of what the player threw.
+    if (isGM) {
+      return { secret: true, mode, shouldSpawn: true, shouldSync: false, ceremonial: false };
+    }
+    return { secret: true, mode, shouldSpawn: true, shouldSync: false, ceremonial: true };
   }
   if (mode === "selfroll") {
-    // Only the dialog opener sees this roll → only spawn for them.
-    return {
-      secret: true,
-      mode,
-      shouldSpawn: true,
-      shouldSync: false,
-    };
+    // Only the opener sees the chat message → spawn locally for them.
+    return { secret: true, mode, shouldSpawn: true, shouldSync: false, ceremonial: false };
   }
 
   // Unknown mode: be safe, treat as public.
   return { secret: false };
+}
+
+/**
+ * Build a ghost-appearance descriptor — same as the user's normal dice but
+ * with `isGhost: true`, which DSN's DiceFactory honors by replacing every
+ * face label with "?" in the rendered material.
+ */
+function buildGhostAppearance(dieType) {
+  try {
+    const Dice3DCls = game.dice3d?.constructor;
+    const factory = game.dice3d?.DiceFactory;
+    if (!Dice3DCls?.APPEARANCE || !factory?.getAppearanceForDice) return null;
+    const raw = Dice3DCls.APPEARANCE(game.user);
+    const base = factory.getAppearanceForDice(raw, dieType);
+    return { ...base, isGhost: true };
+  } catch (e) {
+    warn("buildGhostAppearance failed", e);
+    return null;
+  }
 }
 
 function getDialogMessageMode(dialog) {
@@ -98,8 +121,14 @@ export async function spawnTaskDiceForStore(store) {
       store._secret = true;
       return [];
     }
-    log(`autoSpawn: secret roll (${secrecy.mode}); spawning locally only (no socket sync)`);
-    store._secret = true;
+    if (secrecy.ceremonial) {
+      log(`autoSpawn: ceremonial ghost roll (${secrecy.mode}); spawning blind dice that never feed PF2e`);
+      store._secret = true;
+      store._ceremonial = true;
+    } else {
+      log(`autoSpawn: secret roll (${secrecy.mode}); spawning locally only (no socket sync)`);
+      store._secret = true;
+    }
   }
   const synchronize = secrecy.secret ? !!secrecy.shouldSync : true;
 
@@ -111,24 +140,35 @@ export async function spawnTaskDiceForStore(store) {
     const dieType = `d${slot.faces}`;
     const pos = positions[i];
     try {
-      const mesh = await dice3d.spawnPersistentDie(dieType, pos, {
-        ownerUserId: game.user.id,
-      }, synchronize);
+      const spawnOpts = { ownerUserId: game.user.id };
+      if (secrecy.ceremonial) {
+        const ghost = buildGhostAppearance(dieType);
+        if (ghost) spawnOpts.appearance = ghost;
+      }
+      const mesh = await dice3d.spawnPersistentDie(dieType, pos, spawnOpts, synchronize);
       if (!mesh) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
       }
-      // Tag as our task die. These are the only ones the listener will accept.
-      mesh.userData.dsnPF2eBridge_owned = true;
       mesh.userData.dsnPF2eBridge_dialogId = store.dialogId;
+      // Ceremonial ghost dice are intentionally NOT tagged as owned. The
+      // listener's owned-only gate then ignores any value they produce, so
+      // PF2e's evaluate runs against pure RNG and the player's ritual throw
+      // can't leak the actual blindroll result.
+      if (!secrecy.ceremonial) {
+        mesh.userData.dsnPF2eBridge_owned = true;
+      } else {
+        mesh.userData.dsnPF2eBridge_ceremonial = true;
+      }
       // Lock to the dialog opener by default. DSN's InputHandler honors
       // `userData.lockedBy`: any other player's drag / Ctrl-click attempts
       // are rejected. The user can manually unlock the whole tray via the
       // tray UI's lock toggle.
       //
-      // For SECRET rolls: skip the lock broadcast — the mesh is only on this
-      // client (synchronize=false), so other clients have nothing to lock.
-      // Setting it locally is harmless and keeps the lock-toggle UI consistent.
+      // Secret rolls (incl. ceremonial ghosts): skip lock broadcast — the
+      // mesh is only on this client (synchronize=false), so other clients
+      // have nothing to lock. Local lock is still set so the tray's
+      // "lock toggle" UI stays consistent.
       if (getSetting(SETTINGS.taskDiceLockedByDefault) !== false) {
         mesh.userData.lockedBy = game.user.id;
         if (!secrecy.secret) {

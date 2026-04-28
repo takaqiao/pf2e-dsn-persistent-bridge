@@ -24,6 +24,11 @@
             <i class="fa-solid fa-eye-slash"></i>
             {{localize "pf2e-dsn-persistent-bridge.tray.secretBanner"}}
         </div>
+    {{else if ceremonialGhost}}
+        <div class="dsn-banner dsn-banner-ghost">
+            <i class="fa-solid fa-ghost"></i>
+            {{localize "pf2e-dsn-persistent-bridge.tray.ceremonialBanner"}}
+        </div>
     {{else if isEmpty}}
         <div class="dsn-banner">{{localize "pf2e-dsn-persistent-bridge.tray.noDice"}}</div>
     {{else}}
