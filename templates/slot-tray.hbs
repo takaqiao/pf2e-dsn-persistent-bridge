@@ -38,7 +38,7 @@
                     <div class="dsn-slot-tag">d{{faces}}</div>
                     <div class="dsn-slot-face">
                         {{#if value}}
-                            <span class="dsn-slot-value">{{value}}</span>
+                            <span class="dsn-slot-value{{#if hidden}} dsn-slot-value-hidden{{/if}}">{{displayValue}}</span>
                         {{else}}
                             <span class="dsn-slot-placeholder">
                                 <i class="fa-solid fa-circle-notch fa-spin"></i>

@@ -225,21 +225,14 @@ function handleMesh(mesh) {
   // d100 in DSN is two linked d10 meshes (tens + units). We only consume primaries.
   if (mesh.userData?.linkGroupSecondary === true) return;
 
-  // Ceremonial ghost dice: the player threw a `?`-faced die — its value is
-  // never read or used (deliberately). But we still need to advance the
-  // dialog: the player's expectation is "I threw, the roll happened". So
-  // we count this throw against the store, and once every ghost has been
-  // thrown we trigger the dialog submit (which then runs PF2e's RNG since
-  // no slots are filled).
-  if (mesh.userData?.dsnPF2eBridge_ceremonial === true) {
-    mesh.userData.dsnPF2eBridge_consumed = true;
-    onCeremonialThrow(mesh);
-    return;
-  }
+  // (Ceremonial dice are now also tagged `owned` and feed PF2e through the
+  // normal slot pipeline. The player's slot tray hides the value via
+  // store._hideValues, so even though the value flows through internally
+  // it is never painted to the player's UI.)
 
   // Owned-only gate: only meshes the module spawned and tagged as `owned`
-  // feed into the slot pipeline. Decorative dice + ceremonial ghost dice +
-  // mirrors are all skipped.
+  // feed into the slot pipeline. Decorative dice + secret mirrors on
+  // observers are skipped.
   if (getSetting(SETTINGS.onlyConsumeOwned) !== false) {
     if (mesh.userData?.dsnPF2eBridge_owned !== true) return;
   }
@@ -281,36 +274,3 @@ function parseFaces(notationType) {
   return m ? parseInt(m[1], 10) : null;
 }
 
-/**
- * A ceremonial ghost die just landed. Advance the dialog: count the throw,
- * and once every ghost the dialog spawned has been thrown, click submit so
- * PF2e runs RNG and the result message appears (per its rollMode rules).
- */
-function onCeremonialThrow(mesh) {
-  const dialogId = mesh.userData?.dsnPF2eBridge_dialogId;
-  if (dialogId == null) return;
-  const store = SlotRegistry.all().find((s) => s.dialogId === dialogId);
-  if (!store) return;
-  if (store._autoSubmitted) return;
-
-  store._ceremonialThrows = (store._ceremonialThrows || 0) + 1;
-  const total = store._spawnedMeshIds?.length || 1;
-  log(`ceremonial throw ${store._ceremonialThrows}/${total} for dialog ${dialogId}`);
-  if (store._ceremonialThrows < total) return;
-
-  // All ghost dice landed. Click submit (after the configured delay so the
-  // animation / banner has a moment to feel finished).
-  store._autoSubmitted = true;
-  const delay = Math.max(0, Number(getSetting(SETTINGS.autoSubmitDelayMs) ?? DEFAULT_AUTO_SUBMIT_DELAY_MS));
-  setTimeout(() => {
-    try {
-      const dialog = store.dialog;
-      const root = dialog?.element?.[0] ?? dialog?.element;
-      const submitBtn = root?.querySelector?.('form.check-modifiers-content > button[type=submit]');
-      submitBtn?.click();
-      log(`ceremonial autoSubmit fired for dialog ${dialogId}`);
-    } catch (e) {
-      warn("ceremonial autoSubmit failed", e);
-    }
-  }, delay);
-}

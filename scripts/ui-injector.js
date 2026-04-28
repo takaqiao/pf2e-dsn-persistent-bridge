@@ -175,6 +175,8 @@ async function renderTrayHTML(app, store) {
       faces: s.faces,
       state: s.state,
       value: s.value,
+      hidden: s.hidden === true,
+      displayValue: s.hidden === true ? "?" : s.value,
       lockIcon: s.state === "locked" ? "fa-lock" : "fa-lock-open",
       lockTooltip: game.i18n.localize(
         s.state === "locked"

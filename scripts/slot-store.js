@@ -53,6 +53,11 @@ export class SlotStore {
     slot.state = STATES.FILLED;
     slot.value = value;
     slot.sourceMeshId = meshId ?? null;
+    // Hide the value from the slot's own UI when this store is rolling for a
+    // mode where the opener should not learn the result (player blind/gm).
+    // The value still gets fed to PF2e via toPredetermined() — this only
+    // affects what's painted in the tray.
+    slot.hidden = this._hideValues === true;
     this.notify();
     return slot;
   }

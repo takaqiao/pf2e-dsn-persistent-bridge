@@ -185,6 +185,87 @@ function applyMirrorCleanup({ persistentIds }) {
   }
 }
 
+/* -------- SECRET DISPLAY (HIDE-FOR-NON-GM) SYNC -------- */
+//
+// For ceremonial blind/gm rolls we let DSN sync the spawn (so GM gets the
+// throw animation in real time + the value). The opener renders ghost
+// locally via opts.appearance, but DSN's broadcast carries raw appearance,
+// meaning every other client renders a *real* die with the actual value.
+// That's correct for the GM but a leak for everyone else, so we tell
+// non-GM, non-opener clients to set their mesh's visibility to false.
+
+const pendingDisplayHides = new Map(); // persistentId -> { openerUserId }
+
+export function emitSecretDisplay(payload) {
+  if (!payload?.persistentId) return;
+  try {
+    game.socket?.emit(SOCKET_NAME, { type: "secret-display", ...payload });
+  } catch (e) {
+    warn("emitSecretDisplay failed", e);
+  }
+}
+
+export function emitSecretDisplayCleanup(persistentIds) {
+  if (!persistentIds?.length) return;
+  try {
+    game.socket?.emit(SOCKET_NAME, { type: "secret-display-cleanup", persistentIds });
+  } catch (e) {
+    warn("emitSecretDisplayCleanup failed", e);
+  }
+  // Clear local pending entries too.
+  for (const id of persistentIds) pendingDisplayHides.delete(id);
+}
+
+function applySecretDisplay(payload) {
+  // Receiver decision: opener and GM both keep visibility; everyone else hides.
+  if (game.user?.id === payload.openerUserId) return;
+  if (game.user?.isGM) return;
+
+  const list = game.dice3d?.box?.persistentDiceList;
+  const mesh = Array.isArray(list)
+    ? list.find((m) => m?.userData?.persistentId === payload.persistentId)
+    : null;
+  if (!mesh) {
+    pendingDisplayHides.set(payload.persistentId, { openerUserId: payload.openerUserId });
+    return;
+  }
+  hideMeshSecretly(mesh);
+}
+
+function hideMeshSecretly(mesh) {
+  // Set visibility off on mesh and parent group (DSN wraps in objectContainer).
+  const targets = [mesh, mesh.parent].filter((t) => t && t !== mesh.parent || t);
+  for (const t of [mesh, mesh.parent].filter(Boolean)) {
+    if (t.visible !== false) t.visible = false;
+  }
+  if (mesh.userData) mesh.userData.dsnPF2eBridge_secretHidden = true;
+}
+
+// Re-apply pending hides whenever DSN's persistent list mutates (catches the
+// race where our hide instruction arrives before DSN's spawn completes).
+Hooks.on("dice-so-nice.persistentDiceChanged", () => {
+  if (pendingDisplayHides.size === 0) return;
+  const list = game.dice3d?.box?.persistentDiceList;
+  if (!Array.isArray(list)) return;
+  for (const [id, info] of [...pendingDisplayHides]) {
+    const mesh = list.find((m) => m?.userData?.persistentId === id);
+    if (mesh) {
+      // Re-check the same gating decision (opener / GM keep visibility).
+      if (game.user?.id !== info.openerUserId && !game.user?.isGM) {
+        hideMeshSecretly(mesh);
+      }
+      pendingDisplayHides.delete(id);
+    }
+  }
+});
+
+function applySecretDisplayCleanup({ persistentIds }) {
+  for (const id of persistentIds || []) pendingDisplayHides.delete(id);
+  // No mesh action needed: DSN's normal remove will clear the mesh whether
+  // it's visible or hidden. (See cleanupTaskDiceForStore which calls
+  // removePersistentDie with broadcast=true for ceremonial.)
+}
+
 /* -------- SOCKET ROUTER -------- */
 
 function onSocketMessage(payload) {
@@ -198,6 +279,12 @@ function onSocketMessage(payload) {
       break;
     case "mirror-cleanup":
       applyMirrorCleanup(payload);
+      break;
+    case "secret-display":
+      applySecretDisplay(payload);
+      break;
+    case "secret-display-cleanup":
+      applySecretDisplayCleanup(payload);
       break;
     default:
       // unknown / forward-compat — ignore
