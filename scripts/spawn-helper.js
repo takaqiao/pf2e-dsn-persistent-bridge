@@ -253,21 +253,25 @@ export async function spawnTaskDiceForStore(store) {
       //   emit a "secret-display" hide instruction over our own socket;
       //   non-GM receivers will set mesh.visible=false on their end.
       //
-      // SELF ROLL (sync=false)
-      //   Opener sees real, no DSN broadcast. emitSecretMirror gives
-      //   other clients (incl. GM) a ghost as a 'someone is rolling'
-      //   social cue.
-      //
-      // OTHER SECRET MODES (GM opener of gm/blind, sync=false)
-      //   DSN's own chat-triggered 3D show on result message handles GM
-      //   visibility (PF2e routes the chat to GM only). No mirror.
+      // OTHER SECRET MODES — opener sees real, sync=false on DSN.
+      //   emitSecretMirror lets every other client spawn a local mirror
+      //   under the same persistentId, with appearance picked by their
+      //   own role:
+      //     Self Roll      → all non-opener clients see ghost
+      //     GM-opener gm/blind → other players see ghost (no other GM
+      //                          in single-GM games; if there is one
+      //                          they see real)
+      //   Because the mirrors share persistentId, DSN's own throw socket
+      //   (independent of spawn-sync) will replay the opener's physics
+      //   on every mirror — so others see the throw animation, not just
+      //   a static spawn.
       if (secrecy.ceremonial) {
         emitSecretDisplay({
           mode: secrecy.mode,
           persistentId: mesh.userData.persistentId,
           openerUserId: game.user.id,
         });
-      } else if (secrecy.secret && secrecy.mode === "self") {
+      } else if (secrecy.secret) {
         emitSecretMirror({
           mode: secrecy.mode,
           dieType,
