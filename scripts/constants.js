@@ -17,6 +17,7 @@ export const SETTINGS = {
   settleBufferMs: "settleBufferMs",
   suppressDsnThrowMessage: "suppressDsnThrowMessage",
   taskDiceLockedByDefault: "taskDiceLockedByDefault",
+  respectSecretRolls: "respectSecretRolls",
 };
 
 export const PENDING_TTL_MS = 8000;

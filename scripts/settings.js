@@ -124,6 +124,15 @@ export function registerSettings() {
     default: true,
   });
 
+  game.settings.register(MOD_ID, SETTINGS.respectSecretRolls, {
+    name: `${MOD_ID}.settings.respectSecretRolls.name`,
+    hint: `${MOD_ID}.settings.respectSecretRolls.hint`,
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+
   game.settings.register(MOD_ID, SETTINGS.suppressDsnThrowMessage, {
     name: `${MOD_ID}.settings.suppressDsnThrowMessage.name`,
     hint: `${MOD_ID}.settings.suppressDsnThrowMessage.hint`,

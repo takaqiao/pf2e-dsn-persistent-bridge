@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Features
+
+- **Secret rolls are now honored.** When a PF2e dialog uses `gmroll` / `blindroll` / `selfroll`, the module behaves correctly:
+  - Task dice are spawned only on the client that should see the result (GM for `gmroll`/`blindroll`, opener for `selfroll`).
+  - Never broadcast across socket, so other players don't see the dice physically land on their canvas (no result leak).
+  - Players who shouldn't see the result get a clean banner in the slot tray explaining the dialog is in secret mode and is falling back to system RNG.
+  - Toggleable via new world setting `respectSecretRolls` (default on).
+
+### UX polish
+
+- Slot fill animation: when a thrown die lands and fills a slot, the slot now flashes green briefly and the number scales in (~400ms). Pure CSS, zero perf cost.
+
 ### Repo / packaging
 
 - Added GitHub Actions release workflow (`.github/workflows/release.yml`):

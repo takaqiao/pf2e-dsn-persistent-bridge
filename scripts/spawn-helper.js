@@ -3,6 +3,71 @@ import { SlotRegistry } from "./slot-store.js";
 import { emitLockEvent } from "./socket.js";
 
 /**
+ * Decide how this dialog's roll mode affects task-dice spawning.
+ *
+ * Returns one of:
+ *   { secret: false }                                 — public, normal flow
+ *   { secret: true, mode, shouldSpawn, shouldSync }   — secret roll, behave per below
+ *
+ * Modes:
+ *   publicroll: not secret. spawn + broadcast to everyone.
+ *   gmroll:     GM-only chat; dice should only render on the GM's screen.
+ *               GM client → spawn locally (synchronize=false).
+ *               Player client → don't spawn (they shouldn't see the dice land).
+ *   blindroll:  GM sees chat, EVERYONE ELSE blind (including roll initiator).
+ *               GM client → spawn locally.
+ *               Anyone else → don't spawn.
+ *   selfroll:   only the initiator sees chat.
+ *               Initiator → spawn locally (sync=false).
+ *               Others → don't spawn.
+ */
+export function classifyRollSecrecy(dialog) {
+  if (getSetting(SETTINGS.respectSecretRolls) === false) {
+    return { secret: false };
+  }
+
+  const mode = getDialogMessageMode(dialog);
+  if (!mode || mode === "publicroll" || mode === "roll") {
+    return { secret: false };
+  }
+
+  const isGM = !!game.user?.isGM;
+  if (mode === "gmroll" || mode === "blindroll") {
+    return {
+      secret: true,
+      mode,
+      shouldSpawn: isGM,
+      shouldSync: false,
+    };
+  }
+  if (mode === "selfroll") {
+    // Only the dialog opener sees this roll → only spawn for them.
+    return {
+      secret: true,
+      mode,
+      shouldSpawn: true,
+      shouldSync: false,
+    };
+  }
+
+  // Unknown mode: be safe, treat as public.
+  return { secret: false };
+}
+
+function getDialogMessageMode(dialog) {
+  // PF2e dialogs read context.messageMode (a CONFIG.ChatMessage.modes key:
+  // "publicroll" | "gmroll" | "blindroll" | "selfroll"). Fallback to user
+  // setting then core default. Note: this is captured at spawn time; if the
+  // GM later flips the dropdown inside the dialog before submitting, the
+  // initial spawn decision is not retroactively changed (mid-dialog mode
+  // changes during a secret roll are handled by re-running spawn on the
+  // next dialog re-render in ui-injector).
+  return dialog?.context?.messageMode
+    ?? game?.user?.settings?.messageMode
+    ?? game?.settings?.get?.("core", "rollMode");
+}
+
+/**
  * Spawn task dice for a roll dialog and tag them so the listener distinguishes
  * them from user-spawned "decorative" persistent dice.
  *
@@ -24,6 +89,20 @@ export async function spawnTaskDiceForStore(store) {
   // Don't double-spawn if this store already has spawned dice attached.
   if (store._spawnedMeshIds?.length > 0) return store._spawnedMeshIds;
 
+  // Honor secret rolls: skip spawning entirely on clients that shouldn't see
+  // the result, and never broadcast across socket when we do spawn.
+  const secrecy = classifyRollSecrecy(store.dialog);
+  if (secrecy.secret) {
+    if (!secrecy.shouldSpawn) {
+      log(`autoSpawn: secret roll (${secrecy.mode}); skipping spawn on this client`);
+      store._secret = true;
+      return [];
+    }
+    log(`autoSpawn: secret roll (${secrecy.mode}); spawning locally only (no socket sync)`);
+    store._secret = true;
+  }
+  const synchronize = secrecy.secret ? !!secrecy.shouldSync : true;
+
   const positions = layoutPositions(slots.length);
   const spawnedIds = [];
 
@@ -34,7 +113,7 @@ export async function spawnTaskDiceForStore(store) {
     try {
       const mesh = await dice3d.spawnPersistentDie(dieType, pos, {
         ownerUserId: game.user.id,
-      }, true);
+      }, synchronize);
       if (!mesh) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
@@ -47,12 +126,14 @@ export async function spawnTaskDiceForStore(store) {
       // are rejected. The user can manually unlock the whole tray via the
       // tray UI's lock toggle.
       //
-      // We must broadcast the lock to other clients via socket because DSN's
-      // own spawn-sync does NOT include `lockedBy` in its payload — without
-      // the broadcast other clients would see the mesh as unlocked.
+      // For SECRET rolls: skip the lock broadcast — the mesh is only on this
+      // client (synchronize=false), so other clients have nothing to lock.
+      // Setting it locally is harmless and keeps the lock-toggle UI consistent.
       if (getSetting(SETTINGS.taskDiceLockedByDefault) !== false) {
         mesh.userData.lockedBy = game.user.id;
-        emitLockEvent(mesh.userData.persistentId, game.user.id);
+        if (!secrecy.secret) {
+          emitLockEvent(mesh.userData.persistentId, game.user.id);
+        }
       }
       spawnedIds.push(mesh.userData.persistentId);
     } catch (e) {

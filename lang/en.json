@@ -4,6 +4,7 @@
       "header": "Persistent Dice",
       "noDice": "No dice to roll for this formula.",
       "disabledBanner": "Dice So Nice persistent dice are not active. Rolls will use RNG.",
+      "secretBanner": "Secret roll — you won't see the dice result. Falling back to system RNG.",
       "hint": "Throw your DSN persistent dice on the canvas. Filled values will be used. Empty slots fall back to RNG.",
       "clearAll": "Clear",
       "clearAllTooltip": "Clear all unlocked slots",
@@ -45,6 +46,10 @@
       "taskDiceLockedByDefault": {
         "name": "Lock task dice to dialog opener by default",
         "hint": "Default on. Each task die spawned for a roll dialog is locked to the player who opened the dialog — other players cannot drag, Ctrl+click, or throw it. Each dialog re-locks fresh; you can manually unlock for the current dialog via the 'Mine only' button at the top of the tray. Disable to keep task dice freely interactive for everyone."
+      },
+      "respectSecretRolls": {
+        "name": "Respect secret rolls",
+        "hint": "Default on. When a check / damage dialog uses GM Roll / Blind Roll / Self Roll, the module treats it as a secret roll: task dice are only spawned on the client that should see the result, and never broadcast across socket. Other players see no dice on their canvas, preserving the secrecy. Disable to treat every dialog as public (players will see GM's secret throw animation, leaking the result)."
       },
       "suppressDsnThrowMessage": {
         "name": "Suppress standalone DSN throw message",

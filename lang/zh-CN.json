@@ -4,6 +4,7 @@
       "header": "持续骰子",
       "noDice": "本次掷骰公式无需投骰。",
       "disabledBanner": "Dice So Nice 持续骰子未启用,本次将使用随机数。",
+      "secretBanner": "暗骰模式 — 你不会看到骰子结果。模块已自动让位给系统随机数。",
       "hint": "在画布上扔出 DSN 持续骰子,填充的值会被采用;空槽位将由系统自动随机。",
       "clearAll": "清空",
       "clearAllTooltip": "清空所有未锁定的槽",
@@ -45,6 +46,10 @@
       "taskDiceLockedByDefault": {
         "name": "任务骰默认上锁(仅自己)",
         "hint": "默认开启。每次打开检定框生成的任务骰子默认锁定到打开者,其他玩家拖不动、Ctrl+点也无效。每个对话框都默认上锁,需要手动点 tray 顶部的'仅自己可扔'按钮解锁(下次开新检定又会自动锁回)。关闭后任务骰子任何人都能交互。"
+      },
+      "respectSecretRolls": {
+        "name": "尊重暗骰",
+        "hint": "默认开启。检定 / 伤害对话框选了 GM Roll / Blind Roll / Self Roll 时,模块识别为'暗骰',只在该看到结果的客户端 spawn 任务骰且不广播。其他玩家屏幕上看不到任何骰子,符合暗骰本意。关闭则模块对所有 dialog 一视同仁(玩家会看到 GM 暗骰的物理动画,泄露结果)。"
       },
       "suppressDsnThrowMessage": {
         "name": "抑制 DSN 单独扔骰消息",

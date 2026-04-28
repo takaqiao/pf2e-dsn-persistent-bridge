@@ -19,6 +19,11 @@
             <i class="fa-solid fa-circle-exclamation"></i>
             {{localize "pf2e-dsn-persistent-bridge.tray.disabledBanner"}}
         </div>
+    {{else if secretSkipped}}
+        <div class="dsn-banner dsn-banner-secret">
+            <i class="fa-solid fa-eye-slash"></i>
+            {{localize "pf2e-dsn-persistent-bridge.tray.secretBanner"}}
+        </div>
     {{else if isEmpty}}
         <div class="dsn-banner">{{localize "pf2e-dsn-persistent-bridge.tray.noDice"}}</div>
     {{else}}
