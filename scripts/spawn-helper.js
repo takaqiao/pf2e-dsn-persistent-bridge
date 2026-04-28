@@ -47,25 +47,29 @@ export function classifyRollSecrecy(dialog) {
     return { secret: false };
   }
 
-  // Any secret mode (gm / blind / self) gets the same treatment: spawn a
-  // CEREMONIAL ghost die only on the dialog opener's client. Every face
-  // renders as "?", so even the GM (when GM is the opener of a GM Roll)
-  // can't read the value off the mesh. PF2e's evaluate runs against pure
-  // RNG because ceremonial dice don't carry the `dsnPF2eBridge_owned` flag,
-  // so the listener never feeds their values into the slot pipeline.
-  // The actual result is communicated via the chat message PF2e produces
-  // — and PF2e's own roll-mode handling already controls who sees that.
+  // All secret modes spawn locally on the dialog opener's client (never
+  // synced via socket — other clients shouldn't see the throw). The opener
+  // throws their own dice in every case.
   //
-  // Other clients (not the opener) get no spawn at all: they shouldn't see
-  // the dice land at all, since that animation is the leak vector we're
-  // closing here.
+  // The only mode where the opener is *not* supposed to know the result is
+  // a player-initiated Blind Roll: PF2e hides the chat from the player too.
+  // For that case we give them a CEREMONIAL ghost die — every face renders
+  // as "?", and because the mesh is not tagged `dsnPF2eBridge_owned` the
+  // listener ignores its value, so PF2e falls back to RNG (the player can't
+  // back-derive the result from what they threw).
+  //
+  // GM-initiated Blind Roll, GM Roll, Self Roll: the opener can see the
+  // chat result, so a real die that feeds PF2e is fine.
+  const isGM = !!game.user?.isGM;
+  const isPlayerBlind = norm === "blind" && !isGM;
+
   if (norm === "gm" || norm === "blind" || norm === "self") {
     return {
       secret: true,
       mode: norm,
       shouldSpawn: true,
       shouldSync: false,
-      ceremonial: true,
+      ceremonial: isPlayerBlind,
     };
   }
 
