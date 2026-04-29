@@ -103,6 +103,13 @@
   border: 1px solid rgba(255, 165, 0, 0.4);
   font-style: normal;
 }
+.dsn-bridge-tray .dsn-disabled-reason {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.85em;
+  font-style: italic;
+  opacity: 0.85;
+}
 .dsn-bridge-tray .dsn-banner-secret {
   background: rgba(80, 80, 120, 0.12);
   color: #4a4a6a;

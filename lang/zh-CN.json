@@ -4,6 +4,12 @@
       "header": "持续骰子",
       "noDice": "本次掷骰公式无需投骰。",
       "disabledBanner": "Dice So Nice 持续骰子未启用,本次将使用随机数。",
+      "disabledReason": {
+        "moduleMissing": "原因:Dice So Nice 模组未安装或未启用。",
+        "persistentOff": "原因:DSN 的「显示持续骰子」世界设置已关闭(设置 → 模组设置 → Dice So Nice)。",
+        "interactivityOff": "原因:DSN 的「允许玩家在画布上与骰子交互」世界设置已关闭(设置 → 模组设置 → Dice So Nice)。",
+        "managerMissing": "原因:DSN 的持续骰子子系统在本客户端尚未初始化。DSN 的设置是「需要重载」类型,请刷新页面(F5)再试。"
+      },
       "secretBanner": "暗骰模式 — 你不会看到骰子结果。模块已自动让位给系统随机数。",
       "ceremonialBanner": "暗骰仪式 — 画布上的鬼骰每面都是 \"?\",你扔了纯仪式感,真实结果在 GM 那里走系统随机。",
       "hint": "在画布上扔出 DSN 持续骰子,填充的值会被采用;空槽位将由系统自动随机。",

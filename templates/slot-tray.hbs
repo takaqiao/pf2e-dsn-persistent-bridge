@@ -28,6 +28,7 @@
         <div class="dsn-banner dsn-banner-warn">
             <i class="fa-solid fa-circle-exclamation"></i>
             {{localize "pf2e-dsn-persistent-bridge.tray.disabledBanner"}}
+            {{#if disabledReason}}<br><span class="dsn-disabled-reason">{{disabledReason}}</span>{{/if}}
         </div>
     {{else if secretSkipped}}
         <div class="dsn-banner dsn-banner-secret">
