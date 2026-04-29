@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 — 2026-04-29
+
+### Diagnostics
+
+- **Disabled banner now tells you *why*.** Instead of a generic "Dice So Nice persistent dice are not active", the banner names the specific failure:
+  - `libWrapperMissing` — lib-wrapper not installed/enabled (without it, slots fill but predetermined values never reach the actual roll → looks like "the dice rolled twice with different values")
+  - `moduleMissing` — DSN module not installed/enabled
+  - `persistentOff` — DSN's "Display persistent dice" world setting is off
+  - `interactivityOff` — DSN's "Allow players to interact with dice on the canvas" world setting is off
+  - `managerMissing` — settings look right but `game.dice3d.box.persistentDiceManager` hasn't initialized; DSN settings are `requiresReload`, so refresh (F5)
+- **Console diagnostic helper.** `game.modules.get("pf2e-dsn-persistent-bridge").api.diagnose()` dumps DSN active flag + version, both world settings, dice3d/box/manager presence, libWrapper state, system id. Run it in a tester's console to file a bug report.
+- **Suppression-hook telemetry.** `dsn-suppressor` now logs whether each `diceSoNiceMessagePreProcess` firing actually suppressed or let DSN proceed, including the `rollOptions` keys when not suppressed — so you can tell "wrapper didn't run" from "flag didn't survive serialization" at a glance.
+
+### Settings
+
+- New: `verboseLogging` (client, default off). Per-step traces (matched die, settle timing, evaluate-wrapper injection, suppression-hook decisions) only print when this is on. Console stays quiet during normal play; flip on when filing a bug. Warnings and errors are unconditional.
+
 ## 0.2.0 — 2026-04-29
 
 ### Features
