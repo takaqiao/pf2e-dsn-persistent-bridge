@@ -3,100 +3,63 @@ import { log } from "./constants.js";
 /**
  * Receiver-side optimization for DSN visibility = "mine" / "none".
  *
- * Background: when another player opens a roll dialog, our opener-side
- * spawn broadcasts task dice to every client. On a receiver whose
- * visibility is "mine" or "none", the mesh's parent group is invisible
- * but the mesh stays in `persistentDiceList`. DSN's physics worker steps
- * every die in that list each frame — even at rest, even invisible —
- * so accumulated idle dice across long sessions add measurable cost.
+ * Empirical fact: DSN's `_applyPersistentDieVisibility` sets a foreign
+ * die's `parent.visible = false` at spawn and never re-enables it —
+ * not even during throw replay. So in "mine" / "none" mode, a foreign
+ * task die is invisible from spawn to removal: the throw animation, the
+ * settle, the rest pose, all of it. Keeping the mesh in
+ * `persistentDiceList` therefore buys the user nothing visually but
+ * costs a hidden physics tick per frame.
  *
- * What this module does: while hidden-viewer mode is active and there
- * are foreign task dice on the canvas, poll at 4 Hz. As soon as a
- * foreign task die has settled (forcedResult populated, persistentThrow
- * cleared), remove it locally — the throw animation has just played, the
- * value is captured, the user has no reason to keep the mesh around.
+ * What this does: hook `dice-so-nice.persistentDiceChanged` (which
+ * fires on every add). Any newly-added persistent die that's tagged as
+ * one of our task dice and is not owned by us gets a microtask-deferred
+ * local removal (broadcast=false). Net cost on the canvas: zero.
  *
- * Trade-off: there is still a brief idle window before the throw (the
- * dice exist hidden between dialog-open and throw-start on opener), but
- * post-throw idle collapses to ~200 ms. Eliminating pre-throw idle would
- * require deferring DSN's broadcast spawn to throw-start, which is more
- * involved (separate work item).
+ * Earlier 0.2.3 version polled at 4 Hz and removed on settle; that left
+ * the mesh ticking through the entire throw, which is wasted work since
+ * the user never sees it anyway.
  *
- * Local removal only — broadcast=false. The opener's own cleanup at
- * dialog close still broadcasts the canonical removal; if that hits us
- * after we already removed locally, DSN's removePersistentDie no-ops.
+ * Local removal only — opener's own cleanup at dialog close still
+ * broadcasts the canonical removal; DSN's removePersistentDie no-ops
+ * if the die was already removed locally.
  */
 
-const POLL_MS = 250;
-const REMOVE_GRACE_MS = 200;
-let pollTimer = null;
-const scheduledRemovals = new Set();
+const removedRecently = new Set();
+const REMEMBER_MS = 5000;
 
 function isHiddenViewer() {
   const v = game?.dice3d?.persistentDiceVisibility;
   return v === "mine" || v === "none";
 }
 
-function getForeignTaskDice() {
+function sweepForeignTaskDice() {
+  if (!isHiddenViewer()) return 0;
   const list = game.dice3d?.box?.persistentDiceList;
-  if (!Array.isArray(list)) return [];
+  if (!Array.isArray(list)) return 0;
   const myId = game.user?.id;
-  return list.filter(
-    (m) =>
-      m?.userData?.dsnPF2eBridge_owned === true &&
-      m.userData.ownerUserId !== myId
-  );
-}
-
-function isSettled(mesh) {
-  return mesh?.forcedResult != null && !mesh?.persistentThrow;
-}
-
-function tick() {
-  if (!isHiddenViewer()) {
-    stop();
-    return;
+  let n = 0;
+  for (const mesh of list) {
+    if (mesh?.userData?.dsnPF2eBridge_owned !== true) continue;
+    if (mesh.userData.ownerUserId === myId) continue;
+    const id = mesh.userData.persistentId;
+    if (!id || removedRecently.has(id)) continue;
+    removedRecently.add(id);
+    setTimeout(() => removedRecently.delete(id), REMEMBER_MS);
+    queueMicrotask(() => {
+      try { game.dice3d.removePersistentDie(id, false); } catch {}
+    });
+    n++;
   }
-  const foreigners = getForeignTaskDice();
-  if (foreigners.length === 0) {
-    stop();
-    return;
-  }
-  for (const mesh of foreigners) {
-    const id = mesh.userData?.persistentId;
-    if (!id || scheduledRemovals.has(id)) continue;
-    if (!isSettled(mesh)) continue;
-    scheduledRemovals.add(id);
-    setTimeout(() => {
-      try {
-        game.dice3d.removePersistentDie(id, false);
-      } catch {}
-      scheduledRemovals.delete(id);
-    }, REMOVE_GRACE_MS);
-  }
-}
-
-function start() {
-  if (pollTimer) return;
-  pollTimer = setInterval(tick, POLL_MS);
-  log("foreign-mirror cleaner: poll started");
-}
-
-function stop() {
-  if (!pollTimer) return;
-  clearInterval(pollTimer);
-  pollTimer = null;
-  log("foreign-mirror cleaner: poll stopped");
+  if (n) log(`hidden-viewer: skipped ${n} foreign task die(s)`);
+  return n;
 }
 
 export function startForeignMirrorCleaner() {
-  Hooks.on("dice-so-nice.persistentDiceChanged", () => {
-    if (!isHiddenViewer()) {
-      stop();
-      return;
-    }
-    if (getForeignTaskDice().length > 0) start();
-    else stop();
-  });
-  log("foreign-mirror cleaner: hook registered");
+  Hooks.on("dice-so-nice.persistentDiceChanged", sweepForeignTaskDice);
+  // Also sweep once at startup — handles the case where DSN restored a
+  // foreign task die from a prior session (rare; opener-side restore
+  // suppression should prevent this, but defensive).
+  try { sweepForeignTaskDice(); } catch {}
+  log("hidden-viewer skip-on-receive registered");
 }

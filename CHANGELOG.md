@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.4 — 2026-04-30
+
+### Performance
+
+- **Hidden-viewer skip-on-receive (replaces 0.2.3's settle-cleanup).** Empirical check: DSN's `_applyPersistentDieVisibility` sets a foreign die's `parent.visible=false` at spawn and never re-enables it — not even during throw replay. So in "Show only mine" / "Hide all" the receiver never actually sees foreign throws either; the mesh is invisible from spawn to removal. 0.2.3's "wait until settle then remove" was therefore wasted work — the mesh ticked through an entire invisible throw. 0.2.4 removes locally **on receive** instead: hook `dice-so-nice.persistentDiceChanged`, find any foreign-owned task die we tagged, schedule a microtask-deferred `removePersistentDie(id, false)`. Net canvas cost on hidden-viewer clients: zero. Visually identical (both versions show nothing). Opener-side broadcast cleanup still fires at dialog close; DSN no-ops on already-removed dice.
+
 ## 0.2.3 — 2026-04-30
 
 ### Performance
