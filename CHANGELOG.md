@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3 — 2026-04-30
+
+### Performance
+
+- **Hidden-viewer auto-cleanup.** When your DSN persistent-dice visibility is "Show only mine" or "Hide all", another player opening a dialog used to drop their broadcast task dice on your `persistentDiceList` and keep them there until the opener closed the dialog — invisible but still ticking through DSN's physics worker each frame. Now: a 4 Hz poll runs only while at least one foreign task die is on the canvas, removes each one locally as soon as it settles (`forcedResult` populated, `persistentThrow` cleared) plus a 200 ms grace. Post-throw idle drops from "until opener closes the dialog" to ~200 ms; the throw animation itself is unaffected. Pre-throw idle (between the opener's dialog opening and them actually throwing) is unchanged for now.
+
 ## 0.2.2 — 2026-04-29
 
 ### Fixes

@@ -9,6 +9,7 @@ import { registerDsnSuppressor } from "./dsn-suppressor.js";
 import { registerSocket } from "./socket.js";
 import { installVisibilityPatch } from "./dsn-visibility.js";
 import { sweepOrphanTaskDice } from "./spawn-helper.js";
+import { startForeignMirrorCleaner } from "./foreign-mirror-cleaner.js";
 
 Hooks.once("init", () => {
   registerSettings();
@@ -48,6 +49,11 @@ Hooks.once("ready", () => {
   // refreshed mid-dialog) would otherwise carry the orphan forever. Run
   // once on every client at startup so accumulated orphans get cleaned.
   try { sweepOrphanTaskDice(); } catch (e) { warn("startup orphan sweep failed", e); }
+  // Receiver-side cleanup: when our visibility is "mine" / "none", remove
+  // foreign task dice as soon as they've settled, so post-throw idle on
+  // hidden-viewer clients drops to ~200 ms instead of "until opener closes
+  // the dialog".
+  startForeignMirrorCleaner();
   // Expose a diagnostic helper so testers seeing the "DSN not active" banner
   // can run `game.modules.get("pf2e-dsn-persistent-bridge").api.diagnose()`
   // in the console and report exactly which check failed.
