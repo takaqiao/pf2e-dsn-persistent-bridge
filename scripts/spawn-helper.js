@@ -1,6 +1,7 @@
 import { SETTINGS, getSetting, log, warn } from "./constants.js";
 import { SlotRegistry } from "./slot-store.js";
 import { getDsnVisibility } from "./dsn-visibility.js";
+import { inferShowBreakdownFromDialog } from "./show-breakdown.js";
 import {
   emitLockEvent,
   emitSecretMirror,
@@ -219,23 +220,36 @@ export async function spawnTaskDiceForStore(store) {
     }
   }
   // Sync policy:
-  //   secret rolls — local-only, with a custom secret-mirror flow (see below).
-  //   visibility="none" — local-only too. The user has explicitly set DSN
-  //     to hide all persistent dice, which means they don't want other
-  //     players' clients to render or simulate physics for any persistent
-  //     die — including ours. We spawn task dice locally so the opener can
-  //     still throw them (see force-visible patch in dsn-visibility.js),
-  //     and other clients see / compute nothing.
-  //   visibility="mine" / "all" — broadcast normally so other players see
-  //     the throw animation as a social cue.
+  //   secret rolls         — local-only (custom secret-mirror flow).
+  //   showBreakdown=false  — local-only too. PF2e flagged this roll as
+  //     "players can see chat but not modifiers"; if we let DSN broadcast
+  //     the persistent throw, all-mode receivers would render the actual
+  //     die face value, leaking the result. Instead we mirror via the
+  //     ephemeral-mirror flow which renders ghost ("?") for non-GMs.
+  //   otherwise (public + breakdown visible) — broadcast normally.
   //
-  // For secret modes we still emit `secret-mirror` so receivers spawn their
-  // own ghost/real mesh per role (independent of DSN's own spawn-sync).
+  // Visibility ("Hide all" / "Show only mine") is a *client-local view
+  // filter* and does NOT affect broadcast. Receiver-side optimizations
+  // (foreign-mirror-cleaner skip-on-receive + ephemeral mirror) handle
+  // the hidden-viewer cost on the receiving end.
+  //
+  // The opener-side `_forceVisible` flag is independent of broadcast: when
+  // the opener's own visibility is "Hide all", DSN's local filter would
+  // hide their own task dice too — making them un-throwable. We tag
+  // task dice on the opener's client with `dsnPF2eBridge_forceVisible`
+  // and patch DSN's per-die visibility application to keep them visible
+  // for the opener only (see dsn-visibility.js).
   const visibility = getDsnVisibility();
   const visibilityHidesAll = visibility === "none";
-  const synchronize = !secrecy.secret && !visibilityHidesAll;
+  const showBreakdown = inferShowBreakdownFromDialog(store.dialog);
+  const breakdownHidden = showBreakdown === false;
+  const synchronize = !secrecy.secret && !breakdownHidden;
   store._localOnly = !synchronize;
   store._forceVisible = visibilityHidesAll && !secrecy.secret;
+  store._breakdownHidden = breakdownHidden;
+  if (breakdownHidden) {
+    log(`autoSpawn: breakdown hidden — local-only spawn, mirror-only viewing`);
+  }
 
   const positions = layoutPositions(slots.length);
   const spawnedIds = [];

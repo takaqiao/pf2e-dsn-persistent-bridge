@@ -18,38 +18,61 @@ import { MOD_ID, log, warn } from "./constants.js";
 
 const PRESET_NAMES = ["low", "medium", "high"];
 
-const PRESET_PROFILES = {
-  low: {
-    imageQuality: "low",
-    shadowQuality: "low",
-    bumpMapping: false,
-    useHighDPI: false,
-    antialiasing: "none",
-    glow: false,
-    persistentDiceOutlines: false,
-    advancedGlass: false,
-  },
-  medium: {
-    imageQuality: "medium",
-    shadowQuality: "low",
-    bumpMapping: true,
-    useHighDPI: false,
-    antialiasing: "none",
-    glow: false,
-    persistentDiceOutlines: false,
-    advancedGlass: false,
-  },
-  high: {
-    imageQuality: "high",
-    shadowQuality: "high",
-    bumpMapping: true,
-    useHighDPI: true,
-    antialiasing: "smaa",
-    glow: true,
-    persistentDiceOutlines: true,
-    advancedGlass: true,
-  },
-};
+/**
+ * DSN's High preset picks antialiasing based on the WebGL version of the
+ * current renderer: WebGL2 → "msaa" (hardware multi-sample), else "smaa"
+ * (shader-based fallback). Replicating that detection keeps our preset
+ * byte-identical to what DSN's own initialization would write at
+ * core.performanceMode=2/3.
+ */
+function detectHighAntialiasing() {
+  try {
+    const ctx = game?.canvas?.app?.renderer?.context;
+    return ctx?.webGLVersion === 2 ? "msaa" : "smaa";
+  } catch {
+    return "smaa";
+  }
+}
+
+function buildPresetProfile(name) {
+  switch (name) {
+    case "low":
+      return {
+        imageQuality: "low",
+        shadowQuality: "low",
+        bumpMapping: false,
+        useHighDPI: false,
+        antialiasing: "none",
+        glow: false,
+        persistentDiceOutlines: false,
+        advancedGlass: false,
+      };
+    case "medium":
+      return {
+        imageQuality: "medium",
+        shadowQuality: "low",
+        bumpMapping: true,
+        useHighDPI: false,
+        antialiasing: "none",
+        glow: false,
+        persistentDiceOutlines: false,
+        advancedGlass: false,
+      };
+    case "high":
+      return {
+        imageQuality: "high",
+        shadowQuality: "high",
+        bumpMapping: true,
+        useHighDPI: true,
+        antialiasing: detectHighAntialiasing(),
+        glow: true,
+        persistentDiceOutlines: true,
+        advancedGlass: true,
+      };
+    default:
+      return null;
+  }
+}
 
 function readDsnSettingsFlag() {
   try {
@@ -59,16 +82,36 @@ function readDsnSettingsFlag() {
   }
 }
 
+/**
+ * Read DSN's *effective* settings, not just the user flag.
+ *
+ * Why: DSN.CONFIG() is `mergeObject(DEFAULT_OPTIONS, userFlag)`. DEFAULT_OPTIONS
+ * itself populates the perf fields from `core.performanceMode` via DSN's own
+ * switch case 0/1/2/3. A user who never touched DSN's Performance tab has
+ * an empty flag — but DSN is still rendering at the perf-mode-derived level.
+ * Reading the flag alone would incorrectly report "custom" for that user.
+ *
+ * Using `Dice3D.CONFIG()` returns the merged result, so our preset
+ * detection sees the same values DSN actually uses to render.
+ */
+function readEffectiveSettings() {
+  try {
+    const Dice3DCls = game?.dice3d?.constructor;
+    if (Dice3DCls?.CONFIG) return Dice3DCls.CONFIG();
+  } catch {}
+  return readDsnSettingsFlag();
+}
+
 export function getCurrentPreset() {
-  const flag = readDsnSettingsFlag();
-  if (!flag) return null;
+  const settings = readEffectiveSettings();
+  if (!settings) return null;
   for (const name of PRESET_NAMES) {
-    const p = PRESET_PROFILES[name];
+    const p = buildPresetProfile(name);
     if (
-      flag.imageQuality === p.imageQuality &&
-      flag.shadowQuality === p.shadowQuality &&
-      !!flag.bumpMapping === p.bumpMapping &&
-      !!flag.useHighDPI === p.useHighDPI
+      settings.imageQuality === p.imageQuality &&
+      settings.shadowQuality === p.shadowQuality &&
+      !!settings.bumpMapping === p.bumpMapping &&
+      !!settings.useHighDPI === p.useHighDPI
     ) {
       return name;
     }
@@ -86,7 +129,7 @@ export async function cyclePerfPreset() {
 }
 
 async function applyPreset(name) {
-  const profile = PRESET_PROFILES[name];
+  const profile = buildPresetProfile(name);
   if (!profile) {
     warn(`applyPreset: unknown preset ${name}`);
     return;

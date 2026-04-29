@@ -1,5 +1,9 @@
 {
   "pf2e-dsn-persistent-bridge": {
+    "welcome": {
+      "title": "PF2e × DSN 持续骰子桥",
+      "body": "<ol><li>打开 PF2e 检定对话框 → 画布上出现任务骰。</li><li><strong>拖动摇晃</strong> 或 <strong>右键</strong> 扔出。Ctrl+点击多选后右键一次性全扔。</li><li>未填的槽提交时走 RNG。</li></ol>"
+    },
     "tray": {
       "header": "持续骰子",
       "noDice": "本次掷骰公式无需投骰。",
@@ -13,7 +17,7 @@
       },
       "secretBanner": "暗骰模式 — 你不会看到骰子结果。模块已自动让位给系统随机数。",
       "ceremonialBanner": "暗骰仪式 — 画布上的鬼骰每面都是 \"?\",你扔了纯仪式感,真实结果在 GM 那里走系统随机。",
-      "hint": "在画布上扔出 DSN 持续骰子,填充的值会被采用;空槽位将由系统自动随机。",
+      "hint": "拖动摇晃或右键扔骰子。Ctrl+多选后右键一次扔全部。",
       "clearAll": "清空",
       "clearAllTooltip": "清空所有未锁定的槽",
       "rngAll": "全 RNG",
@@ -113,6 +117,14 @@
       "verboseLogging": {
         "name": "控制台详细日志",
         "hint": "默认关闭。开启后会把每一步细节打印到浏览器控制台(匹配到的骰子、settle 等待耗时、evaluate 包装器的注入过程、抑制钩子的判定结果),适合排查问题或提交 bug 报告时使用。警告和错误信息无论此项是否开启都会输出。"
+      },
+      "rightClickAutoThrow": {
+        "name": "右键直接扔",
+        "hint": "默认开启。在画布上右键你自己的持续骰,即可以最小速度随机方向扔出 —— 不用使劲摇。鼠标在骰子上时浏览器右键菜单会被抑制。"
+      },
+      "mirrorThrowToHiddenViewers": {
+        "name": "为隐藏视角玩家镜像投掷动画",
+        "hint": "默认开启(世界设置)。当某个玩家的 DSN visibility 设为「仅显示自己」或「全部隐藏」,他原本看不到任何其他玩家的任务骰投掷动画。开启后会在他画布上播放一段简短的 ephemeral 3D 动画(预定结果),平时画布依旧干净 —— 他只看到投掷瞬间,落地后骰子消失。关闭则严格遵循 hidden-viewer 模式(完全没有动画)。"
       }
     }
   }

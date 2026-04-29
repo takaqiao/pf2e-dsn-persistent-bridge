@@ -1,5 +1,9 @@
 {
   "pf2e-dsn-persistent-bridge": {
+    "welcome": {
+      "title": "PF2e × DSN Persistent Dice Bridge",
+      "body": "<ol><li>Open a PF2e roll dialog → task dice appear on the canvas.</li><li><strong>Drag-shake</strong> or <strong>right-click</strong> to throw. Ctrl+click multi-select then right-click throws them all at once.</li><li>Empty slots fall back to RNG when you submit.</li></ol>"
+    },
     "tray": {
       "header": "Persistent Dice",
       "noDice": "No dice to roll for this formula.",
@@ -13,7 +17,7 @@
       },
       "secretBanner": "Secret roll — you won't see the dice result. Falling back to system RNG.",
       "ceremonialBanner": "Blind ritual — the ghost dice on canvas show \"?\" on every face. Throw them for the feel; the real result happens via system RNG on the GM's side.",
-      "hint": "Throw your DSN persistent dice on the canvas. Filled values will be used. Empty slots fall back to RNG.",
+      "hint": "Drag-shake or right-click the dice to throw. Ctrl+click multi-select then right-click throws all.",
       "clearAll": "Clear",
       "clearAllTooltip": "Clear all unlocked slots",
       "rngAll": "RNG All",
@@ -113,6 +117,14 @@
       "verboseLogging": {
         "name": "Verbose console logging",
         "hint": "Default off. Turn on to print per-step traces to the browser console (matched dice, settle timings, evaluate-wrapper injection, suppression-hook decisions). Useful for debugging or filing a bug report. Warnings and errors are always shown regardless of this setting."
+      },
+      "rightClickAutoThrow": {
+        "name": "Right-click to throw",
+        "hint": "Default on. Right-click any of your own persistent dice on the canvas to throw it in a random direction at minimum velocity — no shaking required. The browser context menu over the dice canvas is suppressed when you have a die under the cursor."
+      },
+      "mirrorThrowToHiddenViewers": {
+        "name": "Mirror task throws to hidden viewers",
+        "hint": "Default on (world setting). When a player whose DSN visibility is 'Show only mine' or 'Hide all' would otherwise see nothing of another player's task-die throw, play a brief ephemeral 3D animation on their canvas with the predetermined result. Idle dice still don't appear — they only see the throw moment, then the dice vanish. Disable to keep hidden-viewer mode strict (no animation at all)."
       }
     }
   }
