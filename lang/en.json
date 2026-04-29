@@ -4,6 +4,12 @@
       "header": "Persistent Dice",
       "noDice": "No dice to roll for this formula.",
       "disabledBanner": "Dice So Nice persistent dice are not active. Rolls will use RNG.",
+      "disabledReason": {
+        "moduleMissing": "Reason: the dice-so-nice module is not installed or not enabled.",
+        "persistentOff": "Reason: DSN's 'Display persistent dice' world setting is off (Settings → Module Settings → Dice So Nice).",
+        "interactivityOff": "Reason: DSN's 'Allow players to interact with dice on the canvas' world setting is off (Settings → Module Settings → Dice So Nice).",
+        "managerMissing": "Reason: DSN's persistent-dice subsystem hasn't initialized on this client. The DSN settings are 'requiresReload' — try refreshing the page (F5)."
+      },
       "secretBanner": "Secret roll — you won't see the dice result. Falling back to system RNG.",
       "ceremonialBanner": "Blind ritual — the ghost dice on canvas show \"?\" on every face. Throw them for the feel; the real result happens via system RNG on the GM's side.",
       "hint": "Throw your DSN persistent dice on the canvas. Filled values will be used. Empty slots fall back to RNG.",

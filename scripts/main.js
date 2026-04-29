@@ -40,5 +40,36 @@ Hooks.once("ready", () => {
   registerDsnSuppressor();
   registerSocket();
   startDsnListener();
+  // Expose a diagnostic helper so testers seeing the "DSN not active" banner
+  // can run `game.modules.get("pf2e-dsn-persistent-bridge").api.diagnose()`
+  // in the console and report exactly which check failed.
+  const mod = game.modules.get(MOD_ID);
+  if (mod) {
+    mod.api = {
+      diagnose() {
+        const diag = compat.diagnoseDsn();
+        const report = {
+          ok: diag.ok,
+          reason: diag.reason ?? null,
+          dsnModuleActive: !!game.modules.get("dice-so-nice")?.active,
+          dsnModuleVersion: game.modules.get("dice-so-nice")?.version ?? null,
+          persistentDice: tryGet("dice-so-nice", "persistentDice"),
+          allowInteractivity: tryGet("dice-so-nice", "allowInteractivity"),
+          hasDice3d: !!game.dice3d,
+          hasBox: !!game.dice3d?.box,
+          hasPersistentManager: !!game.dice3d?.box?.persistentDiceManager,
+          libWrapperActive: compat.checkLibWrapper(),
+          systemId: game.system?.id,
+        };
+        console.log("[pf2e-dsn-persistent-bridge] diagnose →", report);
+        return report;
+      },
+    };
+  }
   log("ready: hooks active");
 });
+
+function tryGet(scope, key) {
+  try { return game.settings.get(scope, key); }
+  catch { return "<not registered>"; }
+}

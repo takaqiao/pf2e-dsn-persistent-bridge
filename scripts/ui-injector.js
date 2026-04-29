@@ -143,7 +143,19 @@ function slotsShapeChanged(store, descriptors) {
 }
 
 async function renderTrayHTML(app, store) {
-  const dsnReady = compat.checkDsn();
+  const diag = compat.diagnoseDsn();
+  const dsnReady = diag.ok;
+  if (!dsnReady) {
+    log("DSN unavailable on dialog render", {
+      reason: diag.reason,
+      moduleActive: !!game.modules.get("dice-so-nice")?.active,
+      persistentDice: safeGetSetting("dice-so-nice", "persistentDice"),
+      allowInteractivity: safeGetSetting("dice-so-nice", "allowInteractivity"),
+      hasDice3d: !!game.dice3d,
+      hasBox: !!game.dice3d?.box,
+      hasPersistentManager: !!game.dice3d?.box?.persistentDiceManager,
+    });
+  }
   const lockingEnabled = getSetting(SETTINGS.taskDiceLockedByDefault) !== false;
   const isUnlocked = store._unlocked === true;
   // Secret rolls where the current client doesn't get task dice spawn:
@@ -155,6 +167,7 @@ async function renderTrayHTML(app, store) {
   const data = {
     appId: app.appId,
     disabled: !dsnReady,
+    disabledReason: dsnReady ? null : game.i18n.localize(`${MOD_ID}.tray.disabledReason.${diag.reason}`),
     secretSkipped,
     ceremonialGhost,
     isEmpty: store.slots.length === 0,
@@ -268,6 +281,11 @@ function triggerSubmit(app, root) {
   } catch (e) {
     err("auto-submit failed", e);
   }
+}
+
+function safeGetSetting(scope, key) {
+  try { return game.settings.get(scope, key); }
+  catch { return "<not registered>"; }
 }
 
 function unwrap($html) {

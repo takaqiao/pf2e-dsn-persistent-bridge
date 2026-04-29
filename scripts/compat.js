@@ -9,26 +9,42 @@ export const compat = {
     return game.system?.id === "pf2e";
   },
 
-  checkDsn() {
+  // Returns a structured diagnosis so the UI / console can pinpoint *why*
+  // persistent dice are unavailable instead of a generic "not active" warning.
+  diagnoseDsn() {
     const mod = game.modules.get("dice-so-nice");
-    if (!mod?.active) return false;
+    if (!mod?.active) return { ok: false, reason: "moduleMissing" };
+    let persistentEnabled, interactivityEnabled;
     try {
-      const persistentEnabled = game.settings.get("dice-so-nice", "persistentDice");
-      const interactivityEnabled = game.settings.get("dice-so-nice", "allowInteractivity");
-      return persistentEnabled !== false && interactivityEnabled !== false;
-    } catch {
-      return false;
+      persistentEnabled = game.settings.get("dice-so-nice", "persistentDice");
+    } catch { persistentEnabled = undefined; }
+    try {
+      interactivityEnabled = game.settings.get("dice-so-nice", "allowInteractivity");
+    } catch { interactivityEnabled = undefined; }
+    if (persistentEnabled === false) return { ok: false, reason: "persistentOff" };
+    if (interactivityEnabled === false) return { ok: false, reason: "interactivityOff" };
+    // Ground truth: the actual manager has to exist. If both world settings
+    // are on but the manager isn't there, the user almost always needs to
+    // reload (DSN settings are `requiresReload:true`).
+    const dice3d = game.dice3d;
+    if (!dice3d?.box?.persistentDiceManager) {
+      return { ok: false, reason: "managerMissing" };
     }
+    return { ok: true };
+  },
+
+  checkDsn() {
+    return this.diagnoseDsn().ok;
   },
 
   isFullyReady() {
     const lw = this.checkLibWrapper();
     const pf2e = this.checkPF2e();
-    const dsn = this.checkDsn();
+    const diag = this.diagnoseDsn();
     if (!lw) warn("lib-wrapper not active");
     if (!pf2e) warn("not on PF2e system");
-    if (!dsn) warn("DSN not active or persistent dice disabled — UI will still render but rolls fall back to RNG");
-    return lw && pf2e && dsn;
+    if (!diag.ok) warn(`DSN diagnosis: ${diag.reason} — UI will still render but rolls fall back to RNG`);
+    return lw && pf2e && diag.ok;
   },
 
   getCheckRollClass() {
