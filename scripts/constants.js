@@ -16,11 +16,19 @@ export const SETTINGS = {
   taskDiceLockedByDefault: "taskDiceLockedByDefault",
   respectSecretRolls: "respectSecretRolls",
   autoSelectAllOnSpawn: "autoSelectAllOnSpawn",
+  verboseLogging: "verboseLogging",
 };
 
 export const PENDING_TTL_MS = 8000;
 
-export const log = (...args) => console.log(MOD_PREFIX, ...args);
+// Verbose per-step traces are gated by the verboseLogging client setting.
+// warn/err are always on — they signal real problems that operators should see.
+export const log = (...args) => {
+  try {
+    if (game.settings.get(MOD_ID, SETTINGS.verboseLogging) !== true) return;
+  } catch { return; }
+  console.log(MOD_PREFIX, ...args);
+};
 export const warn = (...args) => console.warn(MOD_PREFIX, ...args);
 export const err = (...args) => console.error(MOD_PREFIX, ...args);
 

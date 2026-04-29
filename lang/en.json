@@ -101,6 +101,10 @@
       "suppressRedundantDsn": {
         "name": "Suppress redundant dice animation",
         "hint": "Default on. Without this, PF2e re-asks DSN to show the same dice flying in again after submission, even though you already threw them physically on the canvas. Keep on to skip the duplicate animation."
+      },
+      "verboseLogging": {
+        "name": "Verbose console logging",
+        "hint": "Default off. Turn on to print per-step traces to the browser console (matched dice, settle timings, evaluate-wrapper injection, suppression-hook decisions). Useful for debugging or filing a bug report. Warnings and errors are always shown regardless of this setting."
       }
     }
   }

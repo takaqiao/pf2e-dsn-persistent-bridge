@@ -1,6 +1,17 @@
 import { MOD_ID, SETTINGS } from "./constants.js";
 
 export function registerSettings() {
+  // Register verboseLogging FIRST — log() reads it, and if it's still
+  // unregistered when other registrations log debug info, log() bails out.
+  game.settings.register(MOD_ID, SETTINGS.verboseLogging, {
+    name: `${MOD_ID}.settings.verboseLogging.name`,
+    hint: `${MOD_ID}.settings.verboseLogging.hint`,
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   game.settings.register(MOD_ID, SETTINGS.enabled, {
     name: `${MOD_ID}.settings.enabled.name`,
     hint: `${MOD_ID}.settings.enabled.hint`,
