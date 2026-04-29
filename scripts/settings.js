@@ -139,4 +139,22 @@ export function registerSettings() {
     type: Boolean,
     default: false,
   });
+
+  game.settings.register(MOD_ID, SETTINGS.rightClickAutoThrow, {
+    name: `${MOD_ID}.settings.rightClickAutoThrow.name`,
+    hint: `${MOD_ID}.settings.rightClickAutoThrow.hint`,
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+
+  game.settings.register(MOD_ID, SETTINGS.mirrorThrowToHiddenViewers, {
+    name: `${MOD_ID}.settings.mirrorThrowToHiddenViewers.name`,
+    hint: `${MOD_ID}.settings.mirrorThrowToHiddenViewers.hint`,
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
 }

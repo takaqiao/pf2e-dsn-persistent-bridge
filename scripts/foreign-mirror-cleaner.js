@@ -29,7 +29,9 @@ const removedRecently = new Set();
 const REMEMBER_MS = 5000;
 
 function isHiddenViewer() {
-  const v = game?.dice3d?.persistentDiceVisibility;
+  // Getter is on DiceBox, not Dice3D — `game.dice3d.persistentDiceVisibility`
+  // is undefined.
+  const v = game?.dice3d?.box?.persistentDiceVisibility;
   return v === "mine" || v === "none";
 }
 

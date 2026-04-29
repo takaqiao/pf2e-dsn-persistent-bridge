@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.5 — 2026-04-30
+
+### Features
+
+- **Right-click any of your persistent dice → random-direction throw.** No more vigorous shaking. New client setting `rightClickAutoThrow` (default on). We monkey-patch DSN's `inputHandler.onMouseDown` so `event.button === 2` bypasses the pickup flow and calls `pdm.throwPersistentDice` directly with a randomized velocity (speed × 0.7–2.6, loft × 0.7–1.4 for "every toss feels different"). If the hovered die is part of an active multi-selection (Ctrl+click or the tray's Select-all button), every selected die throws in one batch. d100/d1000 link-group siblings are auto-included.
+- **Ephemeral mirror for hidden viewers + ghost-dice for hidden breakdowns.** Two related issues this fixes:
+  - Players whose DSN visibility is "Show only mine" / "Hide all" used to see *nothing* when others rolled — DSN's `parent.visible=false` covers idle, throw replay, and rest of every foreign persistent die.
+  - PF2e's "Show Roll Breakdowns" off (the typical NPC-roll case) used to leak the actual die value to all-mode receivers because DSN's persistent-throw broadcast renders the real face.
+  - Both addressed by a unified socket-mirror flow. Opener-side: hook `dice3d._emitPersistentEvent("throw")` to mirror task throws the moment they happen, plus `createChatMessage` for direct Roll-button clicks (no persistent throw). Receivers in mine/none mode play `game.dice3d.showForRoll(roll, game.user, false)` — DSN's standard ephemeral 3D animation, predetermined value, auto-clears. When `roll.options.showBreakdown === false` and the receiver isn't the GM, ghost flag is set at all four DSN propagation points (`roll.ghost`, `roll.options.appearance.isGhost`, `term.options.appearance.isGhost`, `showForRoll`'s `options.ghost` arg) so the "?" face survives any DSN appearance pipeline override.
+  - For task throws on `showBreakdown=false` rolls: opener now spawns local-only (`sync=false`) so DSN's broadcast can't leak the real value to all-mode receivers; the mirror flow shows everyone (incl. all-mode) a ghost ephemeral. Works because `showBreakdown` is recovered from the dialog's `context.actor.hasPlayerOwner` (CheckModifiersDialog) or `context.self.actor.hasPlayerOwner` (DamageModifierDialog) at render time — the roll itself doesn't exist yet on the dialog.
+  - Dedup: chat-message path skips when `roll.options._dsnPersistentSourced === true` (set by evaluate-wrapper) or when the message is DSN's own `persistent`-flagged throw chat — so we never double-emit for the same physical throw.
+  - New world setting `mirrorThrowToHiddenViewers` (default on).
+- **First-time welcome message.** Self-whispered chat message describing how to use the module (drag-shake or right-click; Ctrl+multi-select then right-click; empty slots fall back to RNG). Sent once per major-feature version, version-keyed flag so future feature updates can re-send. Tray hint also updated to match.
+
+### Fixes
+
+- **Visibility path bug** (severe — affected 0.2.2 / 0.2.3 / 0.2.4). Three call sites read `game.dice3d.persistentDiceVisibility`, but that getter is on `DiceBox`, not `Dice3D` — they all silently received `undefined` and fell back to `"all"`. Net effect: the spawn-policy branch for "Hide all", the foreign-mirror skip-on-receive in "mine"/"none", and the ephemeral-mirror visibility check were all *no-ops* for the user's actual setting. Fixed by reading `game.dice3d.box.persistentDiceVisibility` everywhere. Hidden-viewer optimizations and visibility-aware spawn now actually run for the first time.
+- **Mirror timing regression**. Earlier 0.2.5 prerelease moved mirror trigger to `createChatMessage`, which fires only after settle + auto-submit + chat creation (~2 s lag). Restored fast path: `pdm.onPersistentEvent("throw")` fires the moment the throw starts. The chat-message path is kept for direct Roll-button clicks (no persistent throw) and gated by `_dsnPersistentSourced` to prevent double-emit.
+- **Mirror hook race with DSN init**. Wrapped `dice3d._emitPersistentEvent` directly (a stable instance method) instead of `pdm.onPersistentEvent` (which DSN's `box.initialize()` rewires asynchronously, overwriting our wrapper). No more "throw hook installed but never fires" silent failure.
+
+### Polish
+
+- **Perf preset button now reads `Dice3D.CONFIG()` (effective settings)**, not just the user flag. New users with empty DSN flag still see the correct preset label (matching their `core.performanceMode`-derived defaults) instead of "Custom".
+- **High preset matches DSN's WebGL2 antialiasing exactly**: dynamically picks `"msaa"` on WebGL2 contexts (the typical case), `"smaa"` on WebGL1 fallback. Was hard-coded to `"smaa"` before, which meant WebGL2 users with `core.performanceMode=High` and an untouched DSN flag would see the tray button label "Custom" (one field off) instead of "High".
+- Tray hint and welcome message rewritten to be one-line / three-line direct usage instructions instead of a manual.
+
 ## 0.2.4 — 2026-04-30
 
 ### Performance

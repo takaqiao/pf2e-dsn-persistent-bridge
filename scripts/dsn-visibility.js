@@ -20,7 +20,10 @@ import { log, warn } from "./constants.js";
 let installed = false;
 
 export function getDsnVisibility() {
-  return game?.dice3d?.persistentDiceVisibility ?? "all";
+  // The getter is on DiceBox, NOT on Dice3D. `game.dice3d.persistentDiceVisibility`
+  // returns undefined; the correct path is `game.dice3d.box.persistentDiceVisibility`,
+  // which delegates to `persistentDiceManager.persistentDiceVisibility`.
+  return game?.dice3d?.box?.persistentDiceVisibility ?? "all";
 }
 
 export function installVisibilityPatch() {

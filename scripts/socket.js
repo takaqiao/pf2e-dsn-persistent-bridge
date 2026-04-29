@@ -1,4 +1,5 @@
 import { MOD_ID, log, warn } from "./constants.js";
+import { applyMirrorThrow } from "./ephemeral-mirror.js";
 
 /**
  * Cross-client sync for two things:
@@ -285,6 +286,9 @@ function onSocketMessage(payload) {
       break;
     case "secret-display-cleanup":
       applySecretDisplayCleanup(payload);
+      break;
+    case "task-mirror-throw":
+      applyMirrorThrow(payload);
       break;
     default:
       // unknown / forward-compat — ignore

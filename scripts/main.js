@@ -10,6 +10,9 @@ import { registerSocket } from "./socket.js";
 import { installVisibilityPatch } from "./dsn-visibility.js";
 import { sweepOrphanTaskDice } from "./spawn-helper.js";
 import { startForeignMirrorCleaner } from "./foreign-mirror-cleaner.js";
+import { installOpenerThrowHook } from "./ephemeral-mirror.js";
+import { installRightClickThrow } from "./right-click-throw.js";
+import { maybeShowWelcome } from "./welcome.js";
 
 Hooks.once("init", () => {
   registerSettings();
@@ -54,6 +57,17 @@ Hooks.once("ready", () => {
   // hidden-viewer clients drops to ~200 ms instead of "until opener closes
   // the dialog".
   startForeignMirrorCleaner();
+  // Opener-side hook: when DSN broadcasts a throw event for one of our
+  // task dice, also broadcast a `task-mirror-throw` socket message so
+  // hidden-viewer receivers can play an ephemeral 3D throw animation
+  // (since they removed the persistent mesh on receive).
+  installOpenerThrowHook();
+  // Right-click on an owned persistent die → throw it in a random
+  // direction with min velocity (no shake required).
+  installRightClickThrow();
+  // First-time welcome: self-whispered chat message describing how to
+  // use the module. Re-sends when WELCOME_VERSION changes in welcome.js.
+  maybeShowWelcome().catch((e) => warn("welcome dispatch failed", e));
   // Expose a diagnostic helper so testers seeing the "DSN not active" banner
   // can run `game.modules.get("pf2e-dsn-persistent-bridge").api.diagnose()`
   // in the console and report exactly which check failed.

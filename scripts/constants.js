@@ -16,6 +16,8 @@ export const SETTINGS = {
   taskDiceLockedByDefault: "taskDiceLockedByDefault",
   respectSecretRolls: "respectSecretRolls",
   autoSelectAllOnSpawn: "autoSelectAllOnSpawn",
+  rightClickAutoThrow: "rightClickAutoThrow",
+  mirrorThrowToHiddenViewers: "mirrorThrowToHiddenViewers",
   verboseLogging: "verboseLogging",
 };
 
