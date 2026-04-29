@@ -26,7 +26,15 @@
       "accessLocked": "仅自己可扔",
       "accessUnlocked": "全员可扔",
       "lockAccessTooltip": "重新锁定 — 其他玩家无法拖动这次的任务骰",
-      "unlockAccessTooltip": "解锁 — 允许任何玩家拖动这次的任务骰(本次有效,下次又会默认上锁)"
+      "unlockAccessTooltip": "解锁 — 允许任何玩家拖动这次的任务骰(本次有效,下次又会默认上锁)",
+      "perfTooltip": "循环切换 DSN 画质预设(低 → 中 → 高)。会写入 DSN 用户设置,F5 刷新生效。",
+      "perfPresetChanged": "DSN 画质 → {preset}。F5 刷新生效。",
+      "perf": {
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "custom": "自定"
+      }
     },
     "settings": {
       "enabled": {

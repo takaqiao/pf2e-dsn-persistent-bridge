@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.2 — 2026-04-29
+
+### Fixes
+
+- **Task dice no longer accumulate on others' canvases.** When DSN's per-user persistent-dice visibility is set to "Hide all", task dice are now spawned **local-only** (sync=false). Other clients receive nothing — no mesh, no physics tick, no orphan to clean up later. With visibility "Show only mine" / "Show all", the existing behavior is preserved (others see your throw animation as a social cue).
+- **"Hide all" no longer breaks the throw flow.** A local visibility patch on `persistentDiceManager._applyPersistentDieVisibility` keeps task dice we tagged `dsnPF2eBridge_forceVisible` visible to the opener even when the global filter is set to hide everything — so you can still see and throw them. After the dialog closes, cleanup removes them and the canvas is empty again.
+- **Defensive orphan sweep.** On every dialog open and once at module ready, scan `persistentDiceList` for any mesh tagged as one of our task dice whose dialog is no longer registered, and remove it. Catches edge cases where a dialog closed without firing the close hook (mid-render error, unusual tear-down path) and left dice stranded on the canvas. The previous remedy was "manually clear via the toolbox".
+
+### Features
+
+- **Performance preset button in the tray.** A new chip in the tray header (next to Select-all / Mine-only) shows the current DSN image-quality bundle (Low / Medium / High / Custom) and, on click, cycles Low → Medium → High. Writes a coherent set of fields to `dice-so-nice.settings` (imageQuality + shadowQuality + bumpMapping + useHighDPI + antialiasing + glow + persistentDiceOutlines + advancedGlass) matching DSN's own `core.performanceMode` mapping. Most fields are `requiresReload`, so the toast notification asks for F5 to apply. The button reflects whatever's currently in the DSN settings panel — toggling either side stays in sync.
+
 ## 0.2.1 — 2026-04-29
 
 ### Diagnostics

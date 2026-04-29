@@ -26,7 +26,15 @@
       "accessLocked": "Mine only",
       "accessUnlocked": "Anyone",
       "lockAccessTooltip": "Re-lock — other players cannot drag the task dice for this roll",
-      "unlockAccessTooltip": "Unlock — let any player drag the task dice for this roll (this dialog only; next dialog re-locks automatically)"
+      "unlockAccessTooltip": "Unlock — let any player drag the task dice for this roll (this dialog only; next dialog re-locks automatically)",
+      "perfTooltip": "Cycle DSN image quality preset (Low → Medium → High). Updates DSN's per-user settings; reload (F5) to apply.",
+      "perfPresetChanged": "DSN preset → {preset}. Reload (F5) to apply.",
+      "perf": {
+        "low": "Low",
+        "medium": "Med",
+        "high": "High",
+        "custom": "Custom"
+      }
     },
     "settings": {
       "enabled": {

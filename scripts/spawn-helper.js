@@ -1,5 +1,6 @@
 import { SETTINGS, getSetting, log, warn } from "./constants.js";
 import { SlotRegistry } from "./slot-store.js";
+import { getDsnVisibility } from "./dsn-visibility.js";
 import {
   emitLockEvent,
   emitSecretMirror,
@@ -217,16 +218,24 @@ export async function spawnTaskDiceForStore(store) {
       log(`autoSpawn: secret roll opener (${secrecy.mode}); real die, local-only`);
     }
   }
-  // Sync policy: every secret mode is local-only (synchronize=false). DSN
-  // does NOT broadcast the spawn; we instead emit our own `secret-mirror`
-  // message so each receiver can independently spawn a local mesh whose
-  // appearance matches their viewer role (ghost vs real) — see decideViewer
-  // in socket.js. The `persistentId` is preserved across all clients, so
-  // DSN's own throw-socket (independent of spawn sync) automatically replays
-  // the physics on every mirror mesh — GM sees a real-die throw animation,
-  // other players see a ghost throw animation, opener stays in their own
-  // local rendering.
-  const synchronize = !secrecy.secret;
+  // Sync policy:
+  //   secret rolls — local-only, with a custom secret-mirror flow (see below).
+  //   visibility="none" — local-only too. The user has explicitly set DSN
+  //     to hide all persistent dice, which means they don't want other
+  //     players' clients to render or simulate physics for any persistent
+  //     die — including ours. We spawn task dice locally so the opener can
+  //     still throw them (see force-visible patch in dsn-visibility.js),
+  //     and other clients see / compute nothing.
+  //   visibility="mine" / "all" — broadcast normally so other players see
+  //     the throw animation as a social cue.
+  //
+  // For secret modes we still emit `secret-mirror` so receivers spawn their
+  // own ghost/real mesh per role (independent of DSN's own spawn-sync).
+  const visibility = getDsnVisibility();
+  const visibilityHidesAll = visibility === "none";
+  const synchronize = !secrecy.secret && !visibilityHidesAll;
+  store._localOnly = !synchronize;
+  store._forceVisible = visibilityHidesAll && !secrecy.secret;
 
   const positions = layoutPositions(slots.length);
   const spawnedIds = [];
@@ -288,18 +297,25 @@ export async function spawnTaskDiceForStore(store) {
       // dice, the slot value will be marked `hidden` so the player's
       // tray doesn't display it.
       mesh.userData.dsnPF2eBridge_owned = true;
+      // When DSN visibility=none, force this task die visible despite the
+      // global hide-all (other persistent dice on the user's canvas stay
+      // hidden). The visibility patch in dsn-visibility.js honors this tag.
+      if (store._forceVisible) {
+        mesh.userData.dsnPF2eBridge_forceVisible = true;
+        if (mesh.parent) mesh.parent.visible = true;
+      }
       // Lock to the dialog opener by default. DSN's InputHandler honors
       // `userData.lockedBy`: any other player's drag / Ctrl-click attempts
       // are rejected. The user can manually unlock the whole tray via the
       // tray UI's lock toggle.
       //
-      // Secret rolls (incl. ceremonial ghosts): skip lock broadcast — the
-      // mesh is only on this client (synchronize=false), so other clients
+      // Local-only spawns (secret rolls, visibility=none): skip lock
+      // broadcast — the mesh is only on this client, so other clients
       // have nothing to lock. Local lock is still set so the tray's
       // "lock toggle" UI stays consistent.
       if (getSetting(SETTINGS.taskDiceLockedByDefault) !== false) {
         mesh.userData.lockedBy = game.user.id;
-        if (!secrecy.secret) {
+        if (!store._localOnly) {
           emitLockEvent(mesh.userData.persistentId, game.user.id);
         }
       }
@@ -427,19 +443,56 @@ export function cleanupTaskDiceForStore(store) {
   const dice3d = game.dice3d;
   if (!dice3d) return;
 
-  // Removal sync semantics:
-  //   public (sync=true on spawn) → DSN sync the remove (broadcast=true)
-  //   secret (sync=false on spawn) → local remove only; we tell receivers
-  //     via secret-mirror-cleanup so they tear down their own mirror meshes.
+  // Removal sync semantics: must mirror the spawn's broadcast policy.
+  //   spawned with sync=true  → broadcast=true (DSN syncs removal)
+  //   spawned with sync=false → broadcast=false (local-only); for secret
+  //     rolls we additionally emit `secret-mirror-cleanup` so receivers
+  //     tear down their bridge-spawned mirror meshes.
   const wasSecret = store?._secret === true;
+  const wasLocalOnly = store?._localOnly === true;
+  const broadcastRemove = !wasLocalOnly;
   for (const id of ids) {
-    try { dice3d.removePersistentDie(id, !wasSecret); } catch {}
+    try { dice3d.removePersistentDie(id, broadcastRemove); } catch {}
   }
   if (wasSecret) {
     emitSecretMirrorCleanup(ids);
   }
   store._spawnedMeshIds = [];
-  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId} (secret=${wasSecret})`);
+  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId} (secret=${wasSecret}, localOnly=${wasLocalOnly})`);
+}
+
+/**
+ * Defensive sweep: scan DSN's `persistentDiceList` for any mesh tagged as
+ * one of our task dice whose dialog is no longer registered, and remove it.
+ * Catches edge cases where a dialog closed without firing the close hook
+ * (e.g. mid-render error, application destroyed by some other path) and
+ * left orphans on the canvas.
+ *
+ * Called on every dialog open and once on `ready` so receivers also clean
+ * up any stale broadcast meshes from prior sessions.
+ *
+ * Always broadcasts removal — orphans may exist on multiple clients (from
+ * a sync-spawn whose cleanup-broadcast never made it through), and we want
+ * a single sweep to clear them everywhere.
+ */
+export function sweepOrphanTaskDice() {
+  const list = game.dice3d?.box?.persistentDiceList;
+  if (!Array.isArray(list)) return 0;
+  const activeDialogIds = new Set(SlotRegistry.all().map((s) => s.dialogId));
+  const toRemove = [];
+  for (const mesh of list) {
+    if (mesh?.userData?.dsnPF2eBridge_owned !== true) continue;
+    const did = mesh.userData?.dsnPF2eBridge_dialogId;
+    if (!did || !activeDialogIds.has(did)) toRemove.push(mesh);
+  }
+  if (toRemove.length === 0) return 0;
+  for (const m of toRemove) {
+    try {
+      game.dice3d.removePersistentDie(m.userData.persistentId, true);
+    } catch {}
+  }
+  log(`orphan sweep: removed ${toRemove.length} stale task dice`);
+  return toRemove.length;
 }
 
 /**

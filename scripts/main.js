@@ -7,6 +7,8 @@ import { startDsnListener } from "./dsn-listener.js";
 import { onPreReroll } from "./reroll-handler.js";
 import { registerDsnSuppressor } from "./dsn-suppressor.js";
 import { registerSocket } from "./socket.js";
+import { installVisibilityPatch } from "./dsn-visibility.js";
+import { sweepOrphanTaskDice } from "./spawn-helper.js";
 
 Hooks.once("init", () => {
   registerSettings();
@@ -40,6 +42,12 @@ Hooks.once("ready", () => {
   registerDsnSuppressor();
   registerSocket();
   startDsnListener();
+  installVisibilityPatch();
+  // Initial sweep: a receiver client that picked up a broadcast task die
+  // from another user's dialog and never saw the cleanup (e.g. that user
+  // refreshed mid-dialog) would otherwise carry the orphan forever. Run
+  // once on every client at startup so accumulated orphans get cleaned.
+  try { sweepOrphanTaskDice(); } catch (e) { warn("startup orphan sweep failed", e); }
   // Expose a diagnostic helper so testers seeing the "DSN not active" banner
   // can run `game.modules.get("pf2e-dsn-persistent-bridge").api.diagnose()`
   // in the console and report exactly which check failed.
