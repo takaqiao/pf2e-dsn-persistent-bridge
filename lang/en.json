@@ -5,6 +5,7 @@
       "noDice": "No dice to roll for this formula.",
       "disabledBanner": "Dice So Nice persistent dice are not active. Rolls will use RNG.",
       "disabledReason": {
+        "libWrapperMissing": "Reason: the lib-wrapper module is not installed or not enabled. Without it, the tray fills but the value never reaches the actual roll — you'll see canvas value 11 but a different number in chat. Install/enable lib-wrapper.",
         "moduleMissing": "Reason: the dice-so-nice module is not installed or not enabled.",
         "persistentOff": "Reason: DSN's 'Display persistent dice' world setting is off (Settings → Module Settings → Dice So Nice).",
         "interactivityOff": "Reason: DSN's 'Allow players to interact with dice on the canvas' world setting is off (Settings → Module Settings → Dice So Nice).",

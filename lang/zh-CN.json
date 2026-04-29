@@ -5,6 +5,7 @@
       "noDice": "本次掷骰公式无需投骰。",
       "disabledBanner": "Dice So Nice 持续骰子未启用,本次将使用随机数。",
       "disabledReason": {
+        "libWrapperMissing": "原因:lib-wrapper 模组未安装或未启用。没有它,槽位会填值,但这个值不会被注入到真实掷骰里 —— 你会看到画布上是 11、但聊天结果是另一个数字(看起来像「又扔了一次」)。请安装/启用 lib-wrapper。",
         "moduleMissing": "原因:Dice So Nice 模组未安装或未启用。",
         "persistentOff": "原因:DSN 的「显示持续骰子」世界设置已关闭(设置 → 模组设置 → Dice So Nice)。",
         "interactivityOff": "原因:DSN 的「允许玩家在画布上与骰子交互」世界设置已关闭(设置 → 模组设置 → Dice So Nice)。",

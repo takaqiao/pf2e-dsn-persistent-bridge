@@ -11,7 +11,11 @@ export const compat = {
 
   // Returns a structured diagnosis so the UI / console can pinpoint *why*
   // persistent dice are unavailable instead of a generic "not active" warning.
+  // Includes lib-wrapper because without it the slot UI fills but the
+  // predetermined value never feeds the actual Roll evaluation, leaving the
+  // tester thinking the dice "rolled twice" (canvas value ≠ chat result).
   diagnoseDsn() {
+    if (!this.checkLibWrapper()) return { ok: false, reason: "libWrapperMissing" };
     const mod = game.modules.get("dice-so-nice");
     if (!mod?.active) return { ok: false, reason: "moduleMissing" };
     let persistentEnabled, interactivityEnabled;
