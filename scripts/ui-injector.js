@@ -10,7 +10,9 @@ import {
   raiseDsnCanvasAboveAll,
   toggleTaskDiceLock,
   selectAllTaskDice,
+  sweepOrphanTaskDice,
 } from "./spawn-helper.js";
+import { getCurrentPreset, cyclePerfPreset } from "./perf-preset.js";
 
 const TEMPLATE = `modules/${MOD_ID}/templates/slot-tray.hbs`;
 
@@ -78,8 +80,10 @@ async function injectTray(app, $html) {
       // Re-spawn for the new shape on the next tick
       spawnTaskDiceForStore(store).catch((e) => err("respawn failed", e));
     } else if (isFresh && descriptors.length > 0) {
-      // First render of this dialog: spawn the task dice and visually hide
-      // any decorative (user-spawned) dice while the dialog is up.
+      // First render of this dialog: sweep any orphan task dice from a
+      // prior dialog whose cleanup didn't run, then spawn the new task
+      // dice and visually hide any decorative (user-spawned) dice.
+      try { sweepOrphanTaskDice(); } catch (e) { err("orphan sweep failed", e); }
       hideDecorativeDice();
       spawnTaskDiceForStore(store).catch((e) => err("spawn failed", e));
     }
@@ -164,6 +168,7 @@ async function renderTrayHTML(app, store) {
     && store._ceremonial !== true
     && (store._spawnedMeshIds?.length ?? 0) === 0;
   const ceremonialGhost = store._ceremonial === true;
+  const perfCurrent = getCurrentPreset() ?? "custom";
   const data = {
     appId: app.appId,
     disabled: !dsnReady,
@@ -174,6 +179,9 @@ async function renderTrayHTML(app, store) {
     showSelectAll: store.slots.length > 1, // only useful with 2+ dice
     selectAllTooltip: game.i18n.localize(`${MOD_ID}.tray.selectAllTooltip`),
     selectAllLabel: game.i18n.localize(`${MOD_ID}.tray.selectAll`),
+    perfCurrent,
+    perfLabel: game.i18n.localize(`${MOD_ID}.tray.perf.${perfCurrent}`),
+    perfTooltip: game.i18n.localize(`${MOD_ID}.tray.perfTooltip`),
     showAccessToggle: lockingEnabled && store.slots.length > 0,
     accessLocked: !isUnlocked,
     accessIcon: isUnlocked ? "fa-lock-open" : "fa-lock",
@@ -233,6 +241,21 @@ function bindTrayHandlers(root, store) {
     b.addEventListener("click", (ev) => {
       ev.preventDefault();
       selectAllTaskDice(store);
+    })
+  );
+
+  // Perf preset: cycle DSN's image/shadow/bump/hi-DPI bundle through
+  // low → medium → high. Most fields require a reload to take effect; the
+  // helper toasts the user accordingly.
+  tray.querySelectorAll('[data-action="dsn-cycle-perf"]').forEach((b) =>
+    b.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      try {
+        await cyclePerfPreset();
+        store.notify();
+      } catch (e) {
+        err("perf cycle failed", e);
+      }
     })
   );
 }

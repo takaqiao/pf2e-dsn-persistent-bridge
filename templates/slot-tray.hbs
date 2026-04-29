@@ -21,6 +21,12 @@
                     <span class="dsn-access-label">{{accessLabel}}</span>
                 </button>
             {{/if}}
+            <button type="button" class="dsn-perf-btn perf-{{perfCurrent}}"
+                    data-action="dsn-cycle-perf"
+                    data-tooltip="{{perfTooltip}}">
+                <i class="fa-solid fa-bolt"></i>
+                <span class="dsn-perf-label">{{perfLabel}}</span>
+            </button>
         </span>
     </header>
 
