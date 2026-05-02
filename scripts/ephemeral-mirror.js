@@ -106,13 +106,27 @@ function onPdmThrow(throwData) {
 }
 
 function inferTaskThrowBreakdown(persistentIds) {
-  for (const store of SlotRegistry.all()) {
-    const ids = store?._spawnedMeshIds ?? [];
-    if (ids.some((id) => persistentIds.includes(id))) {
-      return inferShowBreakdownFromDialog(store.dialog);
-    }
+  // Find the dialog that owns these task dice by walking the live
+  // persistentDiceList and reading each mesh's dsnPF2eBridge_dialogId tag.
+  // We deliberately DON'T match against store._spawnedMeshIds because that
+  // array is only populated at the END of the spawn loop — a user who
+  // throws die #1 before die #5 finishes spawning would see _spawnedMeshIds
+  // still empty and fall back to "true" (visible breakdown), which would
+  // leak the value on a hidden-breakdown roll.
+  const list = game.dice3d?.box?.persistentDiceList;
+  if (!Array.isArray(list)) return true;
+  const idSet = new Set(persistentIds);
+  let dialogId = null;
+  for (const mesh of list) {
+    if (!idSet.has(mesh?.userData?.persistentId)) continue;
+    if (mesh.userData?.dsnPF2eBridge_owned !== true) continue;
+    dialogId = mesh.userData.dsnPF2eBridge_dialogId ?? null;
+    if (dialogId != null) break;
   }
-  return true; // standalone throw — no dialog
+  if (dialogId == null) return true; // standalone throw — no dialog
+  const store = SlotRegistry.get(dialogId);
+  if (!store) return true;
+  return inferShowBreakdownFromDialog(store.dialog);
 }
 
 function onCreateChatMessage(message) {
