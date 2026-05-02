@@ -25,10 +25,11 @@ export function onPreReroll(_oldRoll, unevaluatedNewRoll /* , resource, options 
     PendingQueue.push(game.user.id, harvested, "reroll");
     log("reroll: pushed predetermined values from canvas:", harvested);
 
-    if (getSetting(SETTINGS.autoRemoveAfterConsume) !== false) {
-      const meshIds = harvested.map((h) => h?.meshId).filter(Boolean);
-      scheduleAutoRemove(meshIds);
-    }
+    // Always nuke the spent meshes from canvas — they're tagged
+    // `_consumed=true` so they can't be re-harvested, but visually they
+    // look identical to fresh dice and confuse the next reroll attempt.
+    const meshIds = harvested.map((h) => h?.meshId).filter(Boolean);
+    scheduleAutoRemove(meshIds);
   } catch (e) {
     warn("reroll handler failed", e);
   }

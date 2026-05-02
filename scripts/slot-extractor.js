@@ -31,12 +31,28 @@ function extractCheckSlots(dialog) {
 }
 
 function extractDamageSlots(dialog) {
-  // Try the modern dialog.formulaData path first (most reliable),
-  // falling back to a regex on the rendered submit-button formula.
-  const fromFormulaData = slotsFromFormulaData(dialog?.formulaData);
-  if (fromFormulaData?.length) return fromFormulaData;
-
-  return slotsFromButtonText(dialog);
+  // PREFER the rendered submit-button formula. PF2e's DamageModifierDialog
+  // builds the button text from `createDamageFormula(formulaData, degree)`
+  // — meaning by the time the user sees it, the formula has already had
+  // every transform applied:
+  //
+  //   • Rule Element `override.diceNumber` formulas (e.g. kineticist
+  //     "max(1 + floor((@actor.level - 1) / 4), 1)") resolved to integers.
+  //   • Critical-double dice — when `pf2e.critRule === "doubledice"` and
+  //     this is a crit, the formula contains `2dN[doubled]` instead of `1dN`.
+  //   • Crit-only bonus dice (deadly, fatal, scatter) included.
+  //   • Splash / persistent / precision categories already merged.
+  //
+  // The structural `formulaData` path doesn't apply doubling and stores
+  // RE formulas as raw strings — using it on a crit-doubledice or RE-driven
+  // damage dialog produces the wrong slot count, leaving extra dice to fall
+  // back to RNG (visible in chat but never rolled physically).
+  //
+  // Use `formulaData` only as a fallback for the rare case where the button
+  // text isn't yet populated when our hook fires.
+  const fromButton = slotsFromButtonText(dialog);
+  if (fromButton.length > 0) return fromButton;
+  return slotsFromFormulaData(dialog?.formulaData) ?? [];
 }
 
 function slotsFromFormulaData(formulaData) {

@@ -2,20 +2,24 @@ import { SETTINGS, getSetting, log, warn } from "./constants.js";
 import { dispatchDie, ownerEligible } from "./matcher.js";
 import { SlotRegistry } from "./slot-store.js";
 
-const DEFAULT_AUTO_SUBMIT_DELAY_MS = 100;
-
 const DEFAULT_SETTLE_BUFFER_MS = 3500;
 
 /**
  * Watch DSN's persistent dice for newly-resolved results.
  *
- * Important: `dice-so-nice.persistentDiceChanged` ONLY fires on add/remove,
- * NOT when an existing mesh's `.result` flips from null→number after a throw.
- * So we additionally:
- *   - poll the list at ~4 Hz while any SlotStore is open (cheap, zero cost otherwise)
- *   - hook `diceSoNiceRollComplete` for an immediate scan when DSN signals a roll finished
+ * Capture is hook-driven, not polling. We listen for two PF2e/DSN-emitted
+ * chat-message hooks that bracket a persistent throw:
  *
- * `dsnPF2eBridge_consumed` flag on userData de-dupes accepted dice.
+ *   preCreateChatMessage : fires before DSN's "you rolled X" message hits
+ *                          the DB. If a roll dialog is open and the
+ *                          suppress-redundant setting is on, we cancel the
+ *                          message and trigger settle+scan ourselves.
+ *   createChatMessage    : fires when the message wasn't suppressed. We
+ *                          mark it `.dsn-hide` and reveal after settle so
+ *                          the chat row appears in sync with the canvas.
+ *
+ * `dsnPF2eBridge_consumed` on mesh.userData de-dupes accepted dice across
+ * multiple settle scans.
  */
 
 

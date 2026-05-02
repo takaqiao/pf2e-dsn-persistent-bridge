@@ -135,6 +135,17 @@ function decideViewerVisibility({ mode, openerUserId }) {
   return "skip";
 }
 
+/**
+ * Cleanup race protection: if `mirror-cleanup` for a persistentId arrives
+ * while `applyMirror` is still awaiting `spawnPersistentDie` for that same
+ * id, the cleanup's removePersistentDie() finds nothing on the list and
+ * no-ops. Then the spawn finishes and the mesh becomes a permanent orphan
+ * on the receiver. We track recently-cleaned-up ids in a small Set so the
+ * spawn-completion path can detect "you arrived too late" and self-remove.
+ */
+const recentlyCleanedUpMirrors = new Set();
+const MIRROR_CLEANUP_REMEMBER_MS = 5000;
+
 async function applyMirror(payload) {
   const visibility = decideViewerVisibility(payload);
   if (visibility === "skip") return;
@@ -165,6 +176,17 @@ async function applyMirror(payload) {
       spawnOpts,
       false, // never re-broadcast
     );
+
+    // Race guard: a `mirror-cleanup` may have arrived during the spawn
+    // await. If so, the cleanup couldn't find the mesh (it didn't exist
+    // yet) and silently no-op'd. Now that we have the mesh, immediately
+    // remove it ourselves — otherwise the opener's dialog has long since
+    // closed but our receiver-side mirror lives on as an orphan.
+    if (recentlyCleanedUpMirrors.has(payload.persistentId)) {
+      try { dice3d.removePersistentDie(payload.persistentId, false); } catch {}
+      log(`secret mirror discarded (cleanup arrived during spawn) id=${payload.persistentId}`);
+      return;
+    }
     if (mesh?.userData) {
       mesh.userData.dsnPF2eBridge_secretMirror = true;
       // Mirror meshes are display-only — nobody on this client should be
@@ -181,90 +203,15 @@ async function applyMirror(payload) {
 function applyMirrorCleanup({ persistentIds }) {
   const dice3d = game.dice3d;
   if (!dice3d) return;
-  for (const id of persistentIds || []) {
+  for (const id of (persistentIds || [])) {
+    if (!id) continue;
+    // Mark BEFORE we attempt removal: applyMirror's spawn-completion path
+    // checks this set, so a tardy cleanup that arrived mid-spawn still
+    // gets honored when the spawn finally lands.
+    recentlyCleanedUpMirrors.add(id);
+    setTimeout(() => recentlyCleanedUpMirrors.delete(id), MIRROR_CLEANUP_REMEMBER_MS);
     try { dice3d.removePersistentDie(id, false); } catch {}
   }
-}
-
-/* -------- SECRET DISPLAY (HIDE-FOR-NON-GM) SYNC -------- */
-//
-// For ceremonial blind/gm rolls we let DSN sync the spawn (so GM gets the
-// throw animation in real time + the value). The opener renders ghost
-// locally via opts.appearance, but DSN's broadcast carries raw appearance,
-// meaning every other client renders a *real* die with the actual value.
-// That's correct for the GM but a leak for everyone else, so we tell
-// non-GM, non-opener clients to set their mesh's visibility to false.
-
-const pendingDisplayHides = new Map(); // persistentId -> { openerUserId }
-
-export function emitSecretDisplay(payload) {
-  if (!payload?.persistentId) return;
-  try {
-    game.socket?.emit(SOCKET_NAME, { type: "secret-display", ...payload });
-  } catch (e) {
-    warn("emitSecretDisplay failed", e);
-  }
-}
-
-export function emitSecretDisplayCleanup(persistentIds) {
-  if (!persistentIds?.length) return;
-  try {
-    game.socket?.emit(SOCKET_NAME, { type: "secret-display-cleanup", persistentIds });
-  } catch (e) {
-    warn("emitSecretDisplayCleanup failed", e);
-  }
-  // Clear local pending entries too.
-  for (const id of persistentIds) pendingDisplayHides.delete(id);
-}
-
-function applySecretDisplay(payload) {
-  // Receiver decision: opener and GM both keep visibility; everyone else hides.
-  if (game.user?.id === payload.openerUserId) return;
-  if (game.user?.isGM) return;
-
-  const list = game.dice3d?.box?.persistentDiceList;
-  const mesh = Array.isArray(list)
-    ? list.find((m) => m?.userData?.persistentId === payload.persistentId)
-    : null;
-  if (!mesh) {
-    pendingDisplayHides.set(payload.persistentId, { openerUserId: payload.openerUserId });
-    return;
-  }
-  hideMeshSecretly(mesh);
-}
-
-function hideMeshSecretly(mesh) {
-  // Set visibility off on mesh and parent group (DSN wraps in objectContainer).
-  const targets = [mesh, mesh.parent].filter((t) => t && t !== mesh.parent || t);
-  for (const t of [mesh, mesh.parent].filter(Boolean)) {
-    if (t.visible !== false) t.visible = false;
-  }
-  if (mesh.userData) mesh.userData.dsnPF2eBridge_secretHidden = true;
-}
-
-// Re-apply pending hides whenever DSN's persistent list mutates (catches the
-// race where our hide instruction arrives before DSN's spawn completes).
-Hooks.on("dice-so-nice.persistentDiceChanged", () => {
-  if (pendingDisplayHides.size === 0) return;
-  const list = game.dice3d?.box?.persistentDiceList;
-  if (!Array.isArray(list)) return;
-  for (const [id, info] of [...pendingDisplayHides]) {
-    const mesh = list.find((m) => m?.userData?.persistentId === id);
-    if (mesh) {
-      // Re-check the same gating decision (opener / GM keep visibility).
-      if (game.user?.id !== info.openerUserId && !game.user?.isGM) {
-        hideMeshSecretly(mesh);
-      }
-      pendingDisplayHides.delete(id);
-    }
-  }
-});
-
-function applySecretDisplayCleanup({ persistentIds }) {
-  for (const id of persistentIds || []) pendingDisplayHides.delete(id);
-  // No mesh action needed: DSN's normal remove will clear the mesh whether
-  // it's visible or hidden. (See cleanupTaskDiceForStore which calls
-  // removePersistentDie with broadcast=true for ceremonial.)
 }
 
 /* -------- SOCKET ROUTER -------- */
@@ -280,12 +227,6 @@ function onSocketMessage(payload) {
       break;
     case "mirror-cleanup":
       applyMirrorCleanup(payload);
-      break;
-    case "secret-display":
-      applySecretDisplay(payload);
-      break;
-    case "secret-display-cleanup":
-      applySecretDisplayCleanup(payload);
       break;
     case "task-mirror-throw":
       applyMirrorThrow(payload);

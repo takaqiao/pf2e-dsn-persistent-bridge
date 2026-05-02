@@ -6,8 +6,6 @@ import {
   emitLockEvent,
   emitSecretMirror,
   emitSecretMirrorCleanup,
-  emitSecretDisplay,
-  emitSecretDisplayCleanup,
 } from "./socket.js";
 
 /**
@@ -196,6 +194,20 @@ export async function spawnTaskDiceForStore(store) {
   // Don't double-spawn if this store already has spawned dice attached.
   if (store._spawnedMeshIds?.length > 0) return store._spawnedMeshIds;
 
+  // Spawn token — bumped by cleanupTaskDiceForStore() and any concurrent
+  // re-entry of spawnTaskDiceForStore() (e.g. dialog re-renders with
+  // changed slot shape). Each iteration of the spawn loop checks that
+  // its captured token still matches; mismatched tokens abort the loop
+  // so meshes don't leak onto a closed/reshaped dialog.
+  //
+  // Why this matters for *check* rolls: a player can open a check dialog
+  // and click Roll within ~50ms — well before our async spawn completes.
+  // Without this token, the close-time cleanup runs against an empty
+  // `_spawnedMeshIds` and the mesh appears on canvas after the dialog is
+  // gone, becoming an orphan that survives until the next dialog open
+  // (or page refresh) sweeps it.
+  const myToken = (store._spawnToken = (store._spawnToken ?? 0) + 1);
+
   // Honor secret rolls: skip spawning entirely on clients that shouldn't see
   // the result, and never broadcast across socket when we do spawn.
   const secrecy = classifyRollSecrecy(store.dialog);
@@ -246,7 +258,6 @@ export async function spawnTaskDiceForStore(store) {
   const synchronize = !secrecy.secret && !breakdownHidden;
   store._localOnly = !synchronize;
   store._forceVisible = visibilityHidesAll && !secrecy.secret;
-  store._breakdownHidden = breakdownHidden;
   if (breakdownHidden) {
     log(`autoSpawn: breakdown hidden — local-only spawn, mirror-only viewing`);
   }
@@ -270,6 +281,20 @@ export async function spawnTaskDiceForStore(store) {
         }
       }
       const mesh = await spawnPersistentDieEphemeral(dice3d, dieType, pos, spawnOpts, synchronize);
+
+      // Race guard: cleanupTaskDiceForStore (or a concurrent re-spawn from
+      // a dialog re-render with changed slot shape) bumped _spawnToken
+      // while we awaited. Our work is stale — destroy what we just spawned
+      // and bail out of the loop. Without this, the mesh would land on the
+      // canvas with a dialogId pointing at a closed/reshaped dialog and
+      // become an orphan until the next sweep.
+      if (store._spawnToken !== myToken) {
+        if (mesh?.userData?.persistentId) {
+          try { dice3d.removePersistentDie(mesh.userData.persistentId, synchronize); } catch {}
+        }
+        log(`autoSpawn: aborted (token mismatch) for ${dieType} — dialog closed/reshaped during spawn`);
+        return [];
+      }
       if (!mesh) {
         warn(`autoSpawn: spawnPersistentDie returned null for ${dieType}`);
         continue;
@@ -452,10 +477,41 @@ export function toggleTaskDiceLock(store) {
 }
 
 export function cleanupTaskDiceForStore(store) {
-  const ids = store?._spawnedMeshIds ?? [];
-  if (ids.length === 0) return;
+  // Invalidate any in-flight spawn for this store. The spawn loop checks
+  // _spawnToken after each await; mismatched token aborts the loop and
+  // self-cleans the just-spawned mesh, so we don't leak orphans past
+  // close on rapid open→submit / open→cancel patterns.
+  if (store) store._spawnToken = (store._spawnToken ?? 0) + 1;
+
   const dice3d = game.dice3d;
-  if (!dice3d) return;
+  if (!dice3d) {
+    if (store) store._spawnedMeshIds = [];
+    return;
+  }
+  const list = dice3d.box?.persistentDiceList;
+  if (!Array.isArray(list)) {
+    if (store) store._spawnedMeshIds = [];
+    return;
+  }
+
+  // Search by `dsnPF2eBridge_dialogId` tag rather than relying on the
+  // store's `_spawnedMeshIds` array. Why: the spawn loop tags the mesh's
+  // dialogId IMMEDIATELY after the spawnPersistentDie await resolves
+  // (synchronous, no yield), but only pushes the id into _spawnedMeshIds
+  // at the very end of the loop. So a mesh that completed spawn and got
+  // tagged but didn't finish the loop yet is invisible to a cleanup that
+  // reads _spawnedMeshIds. Walking the live persistentDiceList by tag
+  // catches every mesh that's actually on the canvas right now.
+  const dialogId = store?.dialogId;
+  const ids = [];
+  if (dialogId != null) {
+    for (const mesh of list) {
+      if (mesh?.userData?.dsnPF2eBridge_owned !== true) continue;
+      if (mesh.userData?.dsnPF2eBridge_dialogId !== dialogId) continue;
+      const id = mesh.userData?.persistentId;
+      if (id) ids.push(id);
+    }
+  }
 
   // Removal sync semantics: must mirror the spawn's broadcast policy.
   //   spawned with sync=true  → broadcast=true (DSN syncs removal)
@@ -468,11 +524,13 @@ export function cleanupTaskDiceForStore(store) {
   for (const id of ids) {
     try { dice3d.removePersistentDie(id, broadcastRemove); } catch {}
   }
-  if (wasSecret) {
+  if (wasSecret && ids.length > 0) {
     emitSecretMirrorCleanup(ids);
   }
-  store._spawnedMeshIds = [];
-  log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${store.dialogId} (secret=${wasSecret}, localOnly=${wasLocalOnly})`);
+  if (store) store._spawnedMeshIds = [];
+  if (ids.length > 0) {
+    log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${dialogId} (secret=${wasSecret}, localOnly=${wasLocalOnly})`);
+  }
 }
 
 /**
