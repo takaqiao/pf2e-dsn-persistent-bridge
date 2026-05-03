@@ -31,6 +31,7 @@ export function registerSocket() {
   }
   game.socket.on(SOCKET_NAME, onSocketMessage);
   Hooks.on("dice-so-nice.persistentDiceChanged", flushPendingLocks);
+  Hooks.on("dice-so-nice.persistentDiceChanged", flushPendingFlavorSync);
   log("socket registered:", SOCKET_NAME);
 }
 
@@ -229,6 +230,117 @@ function applyMirrorCleanup({ persistentIds }) {
   }
 }
 
+/* -------- TASK FLAVOR SYNC (public PC rolls) -------- */
+//
+// For public PC damage rolls, the opener's task die is broadcast via DSN's
+// own spawn-sync (synchronize=true). DSN broadcasts only the opener's RAW
+// user appearance — no flavor info — so receivers compute appearance via
+// `getAppearanceForDice(raw, dieType)` (no term) and end up with the
+// opener's default die, not the per-damage-type colorset. Symptom: a fire
+// damage task die spawned on the opener looks fire-themed (we passed
+// flavored appearance via spawnOpts), but on every other client it
+// appears in the opener's default scheme.
+//
+// We close the gap by sending a separate `task-flavor-sync` socket message
+// after each successful flavored spawn. Receivers listen, build appearance
+// using THEIR own DSN settings + opener's flavor, and swap the existing
+// mesh's material in place. No mesh remove/respawn (no flicker), no
+// physics shape recreation (we use a non-persistent textureCache when
+// asking the factory to build the material so its physics-shape branch
+// short-circuits).
+//
+// Race: if our flavor message arrives before DSN's spawn finishes on the
+// receiver, we cache the flavor by persistentId and apply on the next
+// `dice-so-nice.persistentDiceChanged` hook fire (when the mesh lands).
+
+const pendingFlavorSync = new Map(); // persistentId -> { flavor, ts }
+const FLAVOR_SYNC_TTL_MS = 30000;
+
+export function emitTaskFlavorSync({ persistentId, flavor }) {
+  if (!persistentId || !flavor) return;
+  try {
+    game.socket?.emit(SOCKET_NAME, { type: "task-flavor-sync", persistentId, flavor });
+  } catch (e) {
+    warn("emitTaskFlavorSync failed", e);
+  }
+}
+
+async function applyTaskFlavorSync(payload) {
+  const { persistentId, flavor } = payload || {};
+  if (!persistentId || !flavor) return;
+  // Receiver opted out of flavor coloring — respect their setting.
+  if (game.dice3d?.userConfig?.enableFlavorColorset === false) return;
+
+  const list = game.dice3d?.box?.persistentDiceList ?? [];
+  const mesh = list.find((m) => m?.userData?.persistentId === persistentId);
+  if (!mesh) {
+    // Spawn message hasn't been processed yet on this receiver. Cache the
+    // flavor; flushPendingFlavorSync (on persistentDiceChanged) will pick
+    // it up when the mesh lands.
+    pendingFlavorSync.set(persistentId, { flavor, ts: Date.now() });
+    setTimeout(() => pendingFlavorSync.delete(persistentId), FLAVOR_SYNC_TTL_MS);
+    return;
+  }
+  await applyFlavoredMaterialToMesh(mesh, flavor);
+}
+
+async function applyFlavoredMaterialToMesh(mesh, flavor) {
+  const dice3d = game.dice3d;
+  const Dice3DCls = dice3d?.constructor;
+  const factory = dice3d?.DiceFactory;
+  if (!Dice3DCls?.APPEARANCE || typeof factory?.create !== "function") return;
+  // Skip our own meshes — opener already spawned with flavored appearance.
+  if (mesh.userData?.dsnPF2eBridge_owned === true &&
+      mesh.userData?.ownerUserId === game.user?.id) return;
+  // Skip mirror meshes — secret-mirror flow handled their flavor at spawn.
+  if (mesh.userData?.dsnPF2eBridge_secretMirror) return;
+
+  const dieType = mesh.notation?.compositeType ?? mesh.notation?.type;
+  if (!dieType) return;
+
+  // Build the appearance using the RECEIVER's own DSN settings + opener's
+  // flavor. Same shape as spawn-helper.buildSlotAppearance for consistency.
+  const raw = Dice3DCls.APPEARANCE(game.user);
+  const term = { options: { type: flavor, flavor } };
+  const appearance = factory.getAppearanceForDice(raw, dieType, term);
+  if (!appearance) return;
+  if (!appearance.colorset) {
+    appearance.colorset = appearance.name ?? flavor;
+  }
+
+  try {
+    // Hand the factory a textureCache typed "showcase" — same texture
+    // contents as the persistent cache but the type-string makes
+    // factory.create skip its `physicsWorker.exec("createShape")` branch.
+    // We're only after the material; we don't need a second physics body.
+    const persistCache = dice3d.box?._getPersistentTextureCache?.();
+    const noPhysicsCache = persistCache ? { ...persistCache, type: "showcase" } : null;
+    const tempMesh = await factory.create(noPhysicsCache, dieType, appearance, null);
+    if (!tempMesh?.material) return;
+
+    // Three.js material assignment takes effect on the next render frame.
+    // The factory's baseMaterialCache and geometry cache mean we don't
+    // dispose anything — the cached resources are shared and re-used.
+    mesh.material = tempMesh.material;
+    log(`task-flavor-sync: applied ${flavor} to ${dieType} (id=${mesh.userData.persistentId})`);
+  } catch (e) {
+    warn("applyFlavoredMaterialToMesh failed", e);
+  }
+}
+
+function flushPendingFlavorSync() {
+  if (pendingFlavorSync.size === 0) return;
+  const list = game.dice3d?.box?.persistentDiceList;
+  if (!Array.isArray(list)) return;
+  for (const [id, entry] of [...pendingFlavorSync]) {
+    const mesh = list.find((m) => m?.userData?.persistentId === id);
+    if (!mesh) continue;
+    pendingFlavorSync.delete(id);
+    applyFlavoredMaterialToMesh(mesh, entry.flavor)
+      .catch((e) => warn("flushPendingFlavorSync failed", e));
+  }
+}
+
 /* -------- SOCKET ROUTER -------- */
 
 function onSocketMessage(payload) {
@@ -245,6 +357,9 @@ function onSocketMessage(payload) {
       break;
     case "task-mirror-throw":
       applyMirrorThrow(payload);
+      break;
+    case "task-flavor-sync":
+      applyTaskFlavorSync(payload);
       break;
     default:
       // unknown / forward-compat — ignore
