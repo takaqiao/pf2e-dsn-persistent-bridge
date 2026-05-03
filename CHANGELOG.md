@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.2.9 — 2026-05-03
+
+### Fixes
+
+- **Visibility decision rewritten around `actor.alliance`.** v0.2.8's three-layer cascade (`type === "character" || parties.size > 0 || hasPlayerOwner`) was too liberal — adding an NPC to a party for ANY reason (combat tracking, encounter prep, hireling roster) leaked the NPC's dice into broadcasts even when it was clearly an enemy. The alliance system is PF2e's explicit ally-vs-enemy classifier and is the cleanest signal for our purpose. Both `pf2e-toolbelt` and `xdy-pf2e-workbench` use `alliance === "party"` for their respective ally checks, so we're aligned with community precedent and PF2e's own internal pattern (`ALLIANCES.has(stored) ? stored : (hasPlayerOwner ? "party" : "opposition")`). New decision tree, priority-ordered:
+  1. **Stored alliance is `"party"`** → broadcast (visible).
+  2. **Stored alliance is `"opposition"` or `null`** (explicit neutral) → local-only (ghost mirror).
+  3. **Stored alliance is `undefined`** (sparse old saves):
+     - `actor.type === "character"` → broadcast (covers GM-only PCs / pre-gens whose template hasn't initialized alliance).
+     - else → fall back to `hasPlayerOwner`.
+- **Receiver-side flavor sync now goes through remove + local re-spawn instead of in-place material swap.** v0.2.8's hot-swap (`mesh.material = tempMesh.material`) was theoretically correct but in practice DSN's renderer keeps internal program / shader caches keyed off the ORIGINAL material's UUID. Live-swapping the material reference didn't always pick up the new texture atlas / colorset, so receivers continued to render with the opener's default appearance. We now `dice3d.removePersistentDie(id, false)` (local-only, no broadcast) and re-spawn locally with `remotePersistentId=id` and the flavored appearance. The receiver sees a single-frame flicker (~16 ms) which is imperceptible vs the throw animation that typically follows immediately. Persistent ID is preserved so DSN's throw replay continues to find the mesh by id.
+
+### Diagnostics
+
+- Added unconditional `[PF2e×DSN flavor-sync]`-tagged console logs at every step of the flavor-sync flow (emit / receive / queue / flush / re-spawn).
+- Added unconditional `[PF2e×DSN visibility]` log at each task-die spawn showing `actor / type / alliance / hasPlayerOwner / showBreakdown / broadcast` — so you can grep "why did THIS NPC's dice broadcast (or not)?" in the browser console without enabling verboseLogging.
+
+### Customizing per-actor visibility
+
+Set the actor's alliance via PF2e's Actor Sheet → Configure (gear icon) → "Alliance" dropdown:
+- **Party** — dice broadcast as a public PC roll (other players see the actor's task dice on their canvas, flavored per damage type).
+- **Opposition / Neutral / Default** — dice spawn local-only on your client + ghost-throw replay for non-GM viewers (preserves value protection for enemy / neutral rolls).
+
+### Visibility decision now goes through three independent checks (in order)
+
+1. `actor.type === "character"` — PC type. Catches GM-controlled PCs / pre-gens / characters whose player isn't currently online.
+2. `actor.parties?.size > 0` — party membership. Catches NPC allies, cohorts, hirelings explicitly added to the party.
+3. `actor.hasPlayerOwner` — PF2e's stock check. Catches familiars, animal companions, eidolons (ownership cascades from their PC master), and anything else the GM has granted a player OWNER on.
+
+Anything else (NPC enemies, hazards, vehicles without party membership) keeps the value-leak protection: spawned local-only, ghost-throw replay for non-GM viewers.
+
 ## 0.2.8 — 2026-05-03
 
 ### Fixes
