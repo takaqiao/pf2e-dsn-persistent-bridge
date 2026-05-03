@@ -1,31 +1,47 @@
-import { MOD_ID, SETTINGS, log, warn } from "./constants.js";
+import { MOD_ID, SETTINGS, warn } from "./constants.js";
 
 /**
  * Override DSN's shake-to-throw threshold.
  *
- * DSN's `InputHandler.onMouseMove` accumulates `mouse.shakeCount` (direction
- * reversals) and `mouse.spinAccum` (rotational momentum) while a die is held;
- * it auto-triggers `_activatePreRoll()` when either exceeds a hardcoded 5.
- * Some users find that too stiff — they have to shake vigorously to cross
- * the threshold. This module adds a configurable threshold (1–10) via two
- * prototype patches:
+ * DSN's `InputHandler.onMouseMove` records held-die mouse positions to
+ * `mouse.dragPositions` (sampled every 40ms, max 6 entries) and accumulates
+ * `mouse.shakeCount` (direction reversals via dot-product < -0.5) and
+ * `mouse.spinAccum` (rotational momentum via cross-product). It auto-fires
+ * `_activatePreRoll()` when either reaches a hardcoded `m=5` / `g=5`.
  *
- *   1. `_activatePreRoll` wrap — suppresses early calls. Used to LIMIT the
- *      trigger when the user wants a HIGHER (less sensitive) threshold than
- *      DSN's default 5.
+ * The shake-reversal heuristic only triggers on back-and-forth motion — a
+ * straight unidirectional flick (the natural "throw" gesture for many
+ * users) NEVER reaches the trigger no matter how vigorous, because there's
+ * no direction reversal. So lowering the threshold alone has no effect on
+ * straight-flick throws.
  *
- *   2. `onMouseMove` wrap — after DSN's logic runs, re-checks shake state
- *      against the bridge threshold and manually triggers when met. Used
- *      to FORCE-trigger when the user wants a LOWER (more sensitive)
- *      threshold than DSN's default 5.
+ * Three prototype patches together make the threshold actually do what the
+ * user expects:
  *
- * Both patches go on `InputHandler.prototype` so DSN's box rebuilds (window
- * resize, perf-preset changes) preserve them — same pattern as right-click.
+ *   1. `_activatePreRoll` wrap — for thresholds HIGHER than 5, suppress
+ *      DSN's stock auto-trigger until shakeCount/spinAccum catch up.
+ *
+ *   2. `onMouseMove` shake-path — for thresholds LOWER than 5, manually
+ *      fire when shakeCount/spinAccum hit our (lower) bar before DSN's
+ *      hardcoded 5 would.
+ *
+ *   3. `onMouseMove` velocity-path — for thresholds LOWER than 5, also
+ *      fire on a fast unidirectional segment (read straight from
+ *      `mouse.dragPositions`). This is the path that catches a clean
+ *      throw flick — DSN's reversal heuristic never would.
+ *
+ * All patches go on `Object.getPrototypeOf(ih)` (i.e., `InputHandler.prototype`)
+ * so DSN's box rebuilds (window resize, perf-preset changes) preserve them.
+ * Same survival pattern as the v0.3.1 right-click fix.
  */
 
 const DEFAULT_THRESHOLD = 5;
 const MIN = 1;
 const MAX = 10;
+
+// Unconditional diagnostic — same shape as the right-click logs. Always on so
+// users can paste the lines back in a bug report without flipping a setting.
+const DIAG = (...args) => console.log("[PF2e×DSN shake]", ...args);
 
 let installed = false;
 
@@ -43,16 +59,19 @@ export function installShakeSensitivity() {
   if (installed) return;
   const ih = game?.dice3d?.box?.inputHandler;
   if (!ih?.onMouseMove || !ih?._activatePreRoll) {
+    DIAG("install deferred — InputHandler not ready, waiting for diceSoNiceReady");
     Hooks.once("diceSoNiceReady", () => installShakeSensitivity());
     return;
   }
   patch(Object.getPrototypeOf(ih));
   installed = true;
-  log("shake-sensitivity: installed (prototype-patched)");
 }
 
 function patch(proto) {
-  if (!proto || proto._dsnBridgeShakePatched) return;
+  if (!proto || proto._dsnBridgeShakePatched) {
+    DIAG("patch skipped — already patched on this prototype");
+    return;
+  }
   proto._dsnBridgeShakePatched = true;
 
   const origActivate = proto._activatePreRoll;
@@ -62,27 +81,54 @@ function patch(proto) {
     const t = getThreshold();
     const sc = this.mouse?.shakeCount ?? 0;
     const sa = Math.abs(this.mouse?.spinAccum ?? 0);
-    // Suppress until the bridge threshold is met. DSN's own auto-trigger
-    // fires from onMouseMove at >=5; if our threshold is higher, we hold
-    // the trigger off until shake state catches up.
-    if (sc < t && sa < t) return;
+    if (t > DEFAULT_THRESHOLD && sc < t && sa < t) {
+      // Higher threshold: hold off DSN's auto-trigger until our bar is met.
+      DIAG(`_activatePreRoll suppressed (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)})`);
+      return;
+    }
     return origActivate.call(this);
   };
 
   proto.onMouseMove = async function (event, ndc) {
     const ret = await origMove.call(this, event, ndc);
-    // For thresholds LOWER than DSN's hardcoded 5, DSN's automatic check
-    // won't have fired yet. Re-evaluate against our threshold and force-
-    // trigger via the bound original to bypass our own suppress wrap.
-    if (!this.mouse?.preRoll && this.mouse?.heldPersistentDice?.length > 0) {
-      const t = getThreshold();
-      if (t < DEFAULT_THRESHOLD &&
-          (this.mouse.shakeCount >= t || Math.abs(this.mouse.spinAccum) >= t)) {
+
+    if (this.mouse?.preRoll || !(this.mouse?.heldPersistentDice?.length > 0)) {
+      return ret;
+    }
+    const t = getThreshold();
+    if (t >= DEFAULT_THRESHOLD) return ret;
+
+    // Shake-path: reversal/rotation came in below DSN's hardcoded 5 but
+    // already above our (lower) bar. Fire via the captured original to
+    // bypass our own suppress wrap.
+    const sc = this.mouse.shakeCount;
+    const sa = Math.abs(this.mouse.spinAccum);
+    if (sc >= t || sa >= t) {
+      DIAG(`force-trigger via shake (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)})`);
+      origActivate.call(this);
+      return ret;
+    }
+
+    // Velocity-path: catch a clean unidirectional flick. DSN's reversal
+    // heuristic never fires on a straight throw — read the most recent
+    // segment distance from dragPositions instead. Distance threshold maps
+    // ~linearly with the slider so 1 = hair trigger, 4 ≈ DSN's own So=12
+    // segment-length floor.
+    const dp = this.mouse.dragPositions;
+    if (dp?.length >= 2) {
+      const a = dp[dp.length - 2];
+      const b = dp[dp.length - 1];
+      const dist = Math.hypot(b.x - a.x, b.z - a.z);
+      const minSegment = Math.max(3, t * 3);
+      if (dist >= minSegment) {
+        DIAG(`force-trigger via velocity (threshold=${t}, segDist=${dist.toFixed(1)} ≥ ${minSegment})`);
         origActivate.call(this);
       }
     }
     return ret;
   };
+
+  DIAG("patches installed on InputHandler.prototype (default threshold=" + getThreshold() + ")");
 }
 
 /**
@@ -101,8 +147,7 @@ export async function openShakeSensitivityDialog() {
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
         <span style="min-width:5em;">${i18n("threshold")}:</span>
         <input name="threshold" type="range" min="${MIN}" max="${MAX}" value="${current}" step="1"
-               style="flex:1;"
-               oninput="this.closest('.dsn-bridge-shake-dialog').querySelector('.dsn-bridge-shake-val').textContent=this.value" />
+               style="flex:1;" />
         <strong class="dsn-bridge-shake-val" style="min-width:1.5em;text-align:right;font-size:1.1em;">${current}</strong>
       </div>
       <p style="font-size:0.85em;color:#888;margin:8px 0 0;">${i18n("hint")}</p>
@@ -115,12 +160,28 @@ export async function openShakeSensitivityDialog() {
     return;
   }
 
+  // Inline `oninput` is silently dropped under FVTT's CSP; bind via the render
+  // callback so the live numeric display next to the slider updates as the
+  // user drags.
+  const wireLiveDisplay = (root) => {
+    if (!root?.querySelector) return;
+    const slider = root.querySelector('input[name="threshold"]');
+    const display = root.querySelector(".dsn-bridge-shake-val");
+    if (!slider || !display || slider._dsnBridgeWired) return;
+    slider._dsnBridgeWired = true;
+    slider.addEventListener("input", () => { display.textContent = slider.value; });
+  };
+
   try {
     const value = await DialogV2.prompt({
       window: { title: i18n("title") },
       content,
       modal: false,
       rejectClose: false,
+      render: (_event, dialog) => {
+        const root = dialog?.element ?? dialog;
+        wireLiveDisplay(root);
+      },
       ok: {
         label: i18n("save"),
         icon: "fa-solid fa-floppy-disk",
@@ -134,6 +195,7 @@ export async function openShakeSensitivityDialog() {
     if (Number.isFinite(value)) {
       await game.settings.set(MOD_ID, SETTINGS.shakeThreshold, value);
       ui.notifications?.info?.(i18n("saved", { value }));
+      DIAG(`threshold saved → ${value} (live; no reload required)`);
     }
   } catch (e) {
     warn("shake-sensitivity dialog failed", e);
