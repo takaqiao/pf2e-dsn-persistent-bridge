@@ -43,6 +43,30 @@ const SOCKET_NAME = `module.${MOD_ID}`;
 const TAG = "[PF2e×DSN mirror]";
 const diag = (...a) => console.log(TAG, ...a);
 
+/**
+ * PF2e tags damage rolls with a compound flavor like `[fire]` for pure damage
+ * or `[damage,healing,vitality]` for healing rolls. DSN's `detectDamageType`
+ * returns the flavor string verbatim — for compound forms it then fails the
+ * `br[flavor]` lookup because no colorset is named "damage,healing,vitality".
+ * We pre-parse the flavor: split on comma, find the first token that's a
+ * known PF2e damage type, and pass that down. Bare flavors like "fire" pass
+ * through unchanged.
+ */
+const PF2E_DAMAGE_TYPE_NAMES = new Set([
+  "acid", "bleed", "bludgeoning", "cold", "electricity", "fire",
+  "force", "mental", "piercing", "poison", "slashing", "sonic",
+  "spirit", "untyped", "vitality", "void",
+]);
+function parseFlavorToDamageType(s) {
+  if (!s || typeof s !== "string") return null;
+  if (PF2E_DAMAGE_TYPE_NAMES.has(s)) return s; // bare common case
+  for (const part of s.split(",")) {
+    const trimmed = part.trim();
+    if (PF2E_DAMAGE_TYPE_NAMES.has(trimmed)) return trimmed;
+  }
+  return null;
+}
+
 let installed = false;
 let pdmHookInstalled = false;
 
@@ -98,8 +122,9 @@ function onPdmThrow(throwData) {
     const dieType = mesh.notation?.compositeType ?? mesh.notation?.type;
     const result = mesh.notation?.compositeResult ?? r.forcedResult;
     if (!dieType || result == null) continue;
+    const flavor = mesh.userData?.dsnPF2eBridge_flavor ?? null;
 
-    mirrors.push({ dieType, result, showBreakdown, viaTaskThrow: true });
+    mirrors.push({ dieType, result, showBreakdown, viaTaskThrow: true, flavor });
   }
   if (mirrors.length === 0) return;
   emitMirror(mirrors, "pdm.throw");
@@ -157,11 +182,20 @@ function onCreateChatMessage(message) {
     for (const roll of rolls) {
       if (!roll?.dice) continue;
       const showBreakdown = roll?.options?.showBreakdown !== false;
+      // PF2e DamageInstance carries the bare damage type on `roll.type`
+      // (e.g. "fire"). Prefer that over per-die flavor strings, which on
+      // healing rolls are compound ("damage,healing,vitality") and don't
+      // resolve as a colorset name on the receiver.
+      const rollLevelType = parseFlavorToDamageType(roll?.type) ?? null;
       for (const die of roll.dice) {
         if (!Number.isFinite(die.faces)) continue;
+        const flavor = rollLevelType
+          ?? parseFlavorToDamageType(die.options?.type)
+          ?? parseFlavorToDamageType(die.options?.flavor)
+          ?? null;
         for (const result of die.results ?? []) {
           if (!result?.active) continue;
-          mirrors.push({ dieType: `d${die.faces}`, result: result.result, showBreakdown });
+          mirrors.push({ dieType: `d${die.faces}`, result: result.result, showBreakdown, flavor });
         }
       }
     }
@@ -215,14 +249,14 @@ export function applyMirrorThrow(payload) {
       continue;
     }
     const ghost = m.showBreakdown === false && !isGM;
-    diag(`receive: spawning ${m.dieType}=${m.result}${ghost ? " (ghost)" : ""} on ${visibility} viewer`);
-    spawnEphemeralMirror(m.dieType, m.result, ghost).catch((e) =>
+    diag(`receive: spawning ${m.dieType}=${m.result}${ghost ? " (ghost)" : ""}${m.flavor ? ` [${m.flavor}]` : ""} on ${visibility} viewer`);
+    spawnEphemeralMirror(m.dieType, m.result, ghost, m.flavor).catch((e) =>
       warn(TAG, "spawn failed", e)
     );
   }
 }
 
-async function spawnEphemeralMirror(dieType, result, ghost) {
+async function spawnEphemeralMirror(dieType, result, ghost, flavor) {
   const facesMatch = /^d(\d+)$/i.exec(String(dieType).trim());
   if (!facesMatch) {
     diag("spawn: bad dieType", dieType);
@@ -241,6 +275,14 @@ async function spawnEphemeralMirror(dieType, result, ghost) {
     const term = roll.dice?.[0] ?? roll.terms?.[0];
     if (term?.results?.[0]) term.results[0].result = result;
     if ("_total" in roll) roll._total = result;
+    // Tag the term with damage type so DSN's `detectDamageType` picks it up
+    // when calling `getAppearanceForDice` during showForRoll, applying the
+    // receiver's own `damageTypeMap` configuration. We respect their global
+    // `enableFlavorColorset` toggle by leaving the flavor off when disabled.
+    if (flavor && term && game.dice3d?.userConfig?.enableFlavorColorset !== false) {
+      term.options ??= {};
+      term.options.type = flavor;
+    }
     if (ghost) {
       roll.ghost = true;
       roll.options ??= {};

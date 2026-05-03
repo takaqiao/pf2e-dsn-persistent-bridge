@@ -154,20 +154,35 @@ async function applyMirror(payload) {
   if (!dice3d) return;
 
   // Ask DSN to spawn a local-only mesh with the same persistentId so
-  // other modules that index by persistentId line up. We pass the ghost
-  // appearance flag for the ghost case.
+  // other modules that index by persistentId line up. We pass appearance
+  // (flavor-aware base + optional ghost flag) so each receiver renders
+  // using THEIR own DSN damageTypeMap settings rather than inheriting the
+  // opener's color preferences.
   try {
     const spawnOpts = {
       ownerUserId: payload.openerUserId,
       remotePersistentId: payload.persistentId,
     };
-    if (visibility === "ghost") {
+    const wantGhost = visibility === "ghost";
+    if (wantGhost || payload.flavor) {
       const Dice3DCls = dice3d.constructor;
       const factory = dice3d.DiceFactory;
       if (Dice3DCls?.APPEARANCE && factory?.getAppearanceForDice) {
         const raw = Dice3DCls.APPEARANCE(game.user);
-        const base = factory.getAppearanceForDice(raw, payload.dieType);
-        spawnOpts.appearance = { ...base, isGhost: true };
+        const flavorEnabled =
+          payload.flavor && game.dice3d?.userConfig?.enableFlavorColorset !== false;
+        const term = flavorEnabled
+          ? { options: { type: payload.flavor, flavor: payload.flavor } }
+          : null;
+        const base = factory.getAppearanceForDice(raw, payload.dieType, term);
+        // Same colorset-name patch as spawn-helper.buildSlotAppearance —
+        // see that function for the full explanation; without this the
+        // mirror mesh renders with the receiver's default appearance instead
+        // of the flavor-mapped colorset.
+        if (base && flavorEnabled && !base.colorset) {
+          base.colorset = base.name ?? payload.flavor;
+        }
+        spawnOpts.appearance = wantGhost ? { ...base, isGhost: true } : base;
       }
     }
     const mesh = await dice3d.spawnPersistentDie(

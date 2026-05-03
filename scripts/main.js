@@ -13,6 +13,7 @@ import { startForeignMirrorCleaner } from "./foreign-mirror-cleaner.js";
 import { installOpenerThrowHook } from "./ephemeral-mirror.js";
 import { installRightClickThrow } from "./right-click-throw.js";
 import { maybeShowWelcome } from "./welcome.js";
+import { registerPf2eColorsets } from "./pf2e-colorsets.js";
 
 Hooks.once("init", () => {
   registerSettings();
@@ -65,6 +66,18 @@ Hooks.once("ready", () => {
   // Right-click on an owned persistent die → throw it in a random
   // direction with min velocity (no shake required).
   installRightClickThrow();
+  // Register colorsets for PF2e damage types DSN doesn't ship by name
+  // (electricity / sonic / vitality / void / spirit / mental / bleed /
+  // slashing / piercing / bludgeoning / untyped). DSN's damageTypeMap
+  // lookup falls back to the colorset registry when no per-type override
+  // is configured, so registering these makes per-flavor styling actually
+  // work for PF2e users out-of-box. `diceSoNiceReady` ensures dice3d
+  // exists; `addColorset` is idempotent here via our `existing` check.
+  if (game.dice3d) {
+    registerPf2eColorsets();
+  } else {
+    Hooks.once("diceSoNiceReady", () => registerPf2eColorsets());
+  }
   // First-time welcome: self-whispered chat message describing how to
   // use the module. Re-sends when WELCOME_VERSION changes in welcome.js.
   maybeShowWelcome().catch((e) => warn("welcome dispatch failed", e));
@@ -90,6 +103,155 @@ Hooks.once("ready", () => {
           systemId: game.system?.id,
         };
         console.log("[pf2e-dsn-persistent-bridge] diagnose →", report);
+        return report;
+      },
+      /**
+       * End-to-end diagnostic for the per-damage-type colorset path.
+       * Reports: which PF2e damage types are in DSN's br registry; what
+       * the resolved appearance object looks like for a given dieType +
+       * damage type; and whether `enableFlavorColorset` is on.
+       *
+       * Usage in console:
+       *   game.modules.get("pf2e-dsn-persistent-bridge").api.diagnoseFlavor("d6", "fire")
+       *   game.modules.get("pf2e-dsn-persistent-bridge").api.diagnoseFlavor("d6", "vitality")
+       */
+      /**
+       * Inspect spawned task dice on canvas — check whether the bridge
+       * actually tagged each one with its damage type, and what the
+       * mesh's runtime material name looks like.
+       */
+      diagnoseTaskDice() {
+        const list = game.dice3d?.box?.persistentDiceList ?? [];
+        const taskDice = list.filter((m) => m?.userData?.dsnPF2eBridge_owned === true);
+        const report = taskDice.map((m) => ({
+          dieType: m.notation?.compositeType ?? m.notation?.type,
+          persistentId: m.userData?.persistentId,
+          flavorTag: m.userData?.dsnPF2eBridge_flavor ?? null,
+          ownerUserId: m.userData?.ownerUserId,
+          materialColor: m.material?.color?.getHexString?.(),
+          materialName: m.material?.name,
+          materialUuid: m.material?.uuid,
+        }));
+        console.log(`[pf2e-dsn-persistent-bridge] ${taskDice.length} task die(s) on canvas:`, report);
+        return report;
+      },
+      /**
+       * Inspect the currently-open damage/check dialog to see what
+       * formulaData / button-text structure PF2e is exposing so we can
+       * verify our flavor extraction logic.
+       */
+      diagnoseDialog() {
+        const allApps = foundry?.applications?.instances ?? new Map();
+        const dialogs = [];
+        for (const [, app] of allApps) {
+          const cls = app?.constructor?.name;
+          if (cls === "CheckModifiersDialog" || cls === "DamageModifierDialog") {
+            dialogs.push(app);
+          }
+        }
+        if (dialogs.length === 0) {
+          // Fallback: scan ui.windows (V1 apps in older Foundry)
+          for (const id in (ui.windows ?? {})) {
+            const app = ui.windows[id];
+            const cls = app?.constructor?.name;
+            if (cls === "CheckModifiersDialog" || cls === "DamageModifierDialog") {
+              dialogs.push(app);
+            }
+          }
+        }
+        if (dialogs.length === 0) {
+          console.log("[pf2e-dsn-persistent-bridge] No PF2e dialog open. Open a damage roll dialog first.");
+          return null;
+        }
+        const reports = dialogs.map((dialog) => {
+          const root = dialog?.element?.[0] ?? dialog?.element;
+          const btn = root?.querySelector?.("form.check-modifiers-content > button[type=submit]");
+          const formulaData = dialog?.formulaData;
+          return {
+            class: dialog.constructor.name,
+            isCritical: dialog?.isCritical,
+            buttonText: btn?.textContent ?? "(no button)",
+            formulaDataExists: !!formulaData,
+            formulaDataKeys: formulaData ? Object.keys(formulaData) : null,
+            base: formulaData?.base?.map((e) => ({
+              diceNumber: e?.diceNumber,
+              dieSize: e?.dieSize,
+              damageType: e?.damageType,
+              category: e?.category,
+              terms: e?.terms?.map((t) => ({
+                dice: t?.dice ? { number: t.dice.number, faces: t.dice.faces } : null,
+                modifier: t?.modifier,
+              })),
+            })),
+            dice: formulaData?.dice?.map((d) => ({
+              diceNumber: d?.diceNumber ?? d?.override?.diceNumber,
+              dieSize: d?.dieSize ?? d?.override?.dieSize,
+              damageType: d?.damageType,
+              enabled: d?.enabled,
+            })),
+            contextDamageType: dialog?.context?.damageType,
+            contextOutcome: dialog?.context?.outcome,
+            damageInstanceType: dialog?.damage?.roll?.instances?.[0]?.type,
+            damageInstanceCount: dialog?.damage?.roll?.instances?.length,
+          };
+        });
+        console.log(`[pf2e-dsn-persistent-bridge] ${dialogs.length} open dialog(s):`, reports);
+        console.log("=== JSON ===");
+        console.log(JSON.stringify(reports, (k, v) => {
+          // Strip Foundry/PIXI/THREE objects from JSON output
+          if (v && typeof v === "object" && (v.constructor?.name || "").match(/^(Actor|Token|Application|Scene|Roll|DamageInstance|Mesh|Object3D)/)) {
+            return `<${v.constructor.name}>`;
+          }
+          return v;
+        }, 2));
+        return reports;
+      },
+      diagnoseFlavor(dieType = "d6", flavor = "fire") {
+        const dice3d = game.dice3d;
+        if (!dice3d) return console.log("dice3d not ready"), null;
+        const Dice3DCls = dice3d.constructor;
+        const factory = dice3d.DiceFactory;
+        const colorsets = dice3d.exports?.COLORSETS ?? {};
+        const PF2E_ALL = ["acid", "bleed", "bludgeoning", "cold", "electricity", "fire", "force", "mental", "piercing", "poison", "slashing", "sonic", "spirit", "untyped", "vitality", "void"];
+        const colorsetCoverage = {};
+        for (const t of PF2E_ALL) {
+          colorsetCoverage[t] = colorsets[t] ? `✓ (${colorsets[t].category})` : "✗ MISSING";
+        }
+        const enableFlavor = dice3d.userConfig?.enableFlavorColorset;
+        const damageTypeMap = tryGet("dice-so-nice", "damageTypeMap") ?? {};
+        const raw = Dice3DCls.APPEARANCE(game.user);
+        const term = { options: { type: flavor, flavor } };
+        const resolved = factory.getAppearanceForDice(raw, dieType, term);
+        const report = {
+          enableFlavorColorset: enableFlavor,
+          flavorFixActive: !!game.modules.get("pf2e-dice-flavor-fix")?.active,
+          colorsetCoverage,
+          damageTypeMapKeys: Object.keys(damageTypeMap),
+          query: { dieType, flavor },
+          resolved: {
+            colorset: resolved?.colorset,
+            foreground: resolved?.foreground,
+            background: Array.isArray(resolved?.background) ? `[${resolved.background.length} colors]` : resolved?.background,
+            texture: typeof resolved?.texture === "object" ? resolved?.texture?.name : resolved?.texture,
+            material: resolved?.material,
+            isGhost: resolved?.isGhost,
+            system: resolved?.system,
+            systemSettings: resolved?.systemSettings ? Object.keys(resolved.systemSettings) : null,
+          },
+          rawUserGlobal: {
+            system: raw?.global?.system,
+            colorset: raw?.global?.colorset,
+            labelColor: raw?.global?.labelColor,
+            diceColor: raw?.global?.diceColor,
+          },
+          rawDieType: raw?.[dieType] ? {
+            system: raw[dieType].system,
+            colorset: raw[dieType].colorset,
+          } : null,
+          // Check if a "basic" or PF2e-specific system might be intercepting
+          knownSystems: factory ? Array.from(factory.systems?.keys?.() ?? []) : [],
+        };
+        console.log("[pf2e-dsn-persistent-bridge] diagnoseFlavor →", report);
         return report;
       },
     };
