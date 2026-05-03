@@ -300,6 +300,16 @@ export async function spawnTaskDiceForStore(store) {
   const synchronize = !secrecy.secret && !breakdownHidden;
   store._localOnly = !synchronize;
   store._forceVisible = visibilityHidesAll && !secrecy.secret;
+  // Unconditional log so users can debug "why did NPC X show as ghost (or
+  // not)?" without enabling verboseLogging — the alliance-based decision
+  // surface area is small enough that one line is enough.
+  const sourceActor = store.dialog?.context?.self?.actor ?? store.dialog?.context?.actor;
+  console.log("[PF2e×DSN visibility]",
+    `actor=${sourceActor?.name ?? "?"}`,
+    `type=${sourceActor?.type ?? "?"}`,
+    `alliance=${sourceActor?.alliance ?? "(unset)"}`,
+    `hasPlayerOwner=${!!sourceActor?.hasPlayerOwner}`,
+    `→ showBreakdown=${showBreakdown}, broadcast=${synchronize}`);
   if (breakdownHidden) {
     log(`autoSpawn: breakdown hidden — local-only spawn, mirror-only viewing`);
   }

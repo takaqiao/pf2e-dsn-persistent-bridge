@@ -255,11 +255,14 @@ function applyMirrorCleanup({ persistentIds }) {
 
 const pendingFlavorSync = new Map(); // persistentId -> { flavor, ts }
 const FLAVOR_SYNC_TTL_MS = 30000;
+const FLAVOR_TAG = "[PF2e×DSN flavor-sync]";
+const flavorDiag = (...a) => console.log(FLAVOR_TAG, ...a);
 
 export function emitTaskFlavorSync({ persistentId, flavor }) {
   if (!persistentId || !flavor) return;
   try {
     game.socket?.emit(SOCKET_NAME, { type: "task-flavor-sync", persistentId, flavor });
+    flavorDiag(`emit: ${persistentId} → ${flavor}`);
   } catch (e) {
     warn("emitTaskFlavorSync failed", e);
   }
@@ -268,8 +271,12 @@ export function emitTaskFlavorSync({ persistentId, flavor }) {
 async function applyTaskFlavorSync(payload) {
   const { persistentId, flavor } = payload || {};
   if (!persistentId || !flavor) return;
+  flavorDiag(`receive: ${persistentId} → ${flavor}`);
   // Receiver opted out of flavor coloring — respect their setting.
-  if (game.dice3d?.userConfig?.enableFlavorColorset === false) return;
+  if (game.dice3d?.userConfig?.enableFlavorColorset === false) {
+    flavorDiag(`receive: skipped (enableFlavorColorset=false)`);
+    return;
+  }
 
   const list = game.dice3d?.box?.persistentDiceList ?? [];
   const mesh = list.find((m) => m?.userData?.persistentId === persistentId);
@@ -277,54 +284,113 @@ async function applyTaskFlavorSync(payload) {
     // Spawn message hasn't been processed yet on this receiver. Cache the
     // flavor; flushPendingFlavorSync (on persistentDiceChanged) will pick
     // it up when the mesh lands.
+    flavorDiag(`receive: mesh not yet on canvas, queued for flush`);
     pendingFlavorSync.set(persistentId, { flavor, ts: Date.now() });
     setTimeout(() => pendingFlavorSync.delete(persistentId), FLAVOR_SYNC_TTL_MS);
     return;
   }
-  await applyFlavoredMaterialToMesh(mesh, flavor);
+  await applyFlavoredAppearance(mesh, flavor);
 }
 
-async function applyFlavoredMaterialToMesh(mesh, flavor) {
+async function applyFlavoredAppearance(mesh, flavor) {
   const dice3d = game.dice3d;
   const Dice3DCls = dice3d?.constructor;
   const factory = dice3d?.DiceFactory;
-  if (!Dice3DCls?.APPEARANCE || typeof factory?.create !== "function") return;
+  if (!Dice3DCls?.APPEARANCE || typeof factory?.getAppearanceForDice !== "function") {
+    flavorDiag(`apply: skipped (Dice3D APPEARANCE/factory unavailable)`);
+    return;
+  }
   // Skip our own meshes — opener already spawned with flavored appearance.
   if (mesh.userData?.dsnPF2eBridge_owned === true &&
-      mesh.userData?.ownerUserId === game.user?.id) return;
+      mesh.userData?.ownerUserId === game.user?.id) {
+    flavorDiag(`apply: skipped (this is opener's own mesh)`);
+    return;
+  }
   // Skip mirror meshes — secret-mirror flow handled their flavor at spawn.
-  if (mesh.userData?.dsnPF2eBridge_secretMirror) return;
+  if (mesh.userData?.dsnPF2eBridge_secretMirror) {
+    flavorDiag(`apply: skipped (secret-mirror mesh, flavor done at spawn)`);
+    return;
+  }
+  // Already flavored (idempotency on flush race).
+  if (mesh.userData?.dsnPF2eBridge_flavorApplied === flavor) {
+    flavorDiag(`apply: skipped (already applied flavor=${flavor})`);
+    return;
+  }
 
   const dieType = mesh.notation?.compositeType ?? mesh.notation?.type;
-  if (!dieType) return;
+  if (!dieType) {
+    flavorDiag(`apply: skipped (no dieType on mesh.notation)`);
+    return;
+  }
 
   // Build the appearance using the RECEIVER's own DSN settings + opener's
   // flavor. Same shape as spawn-helper.buildSlotAppearance for consistency.
   const raw = Dice3DCls.APPEARANCE(game.user);
   const term = { options: { type: flavor, flavor } };
   const appearance = factory.getAppearanceForDice(raw, dieType, term);
-  if (!appearance) return;
+  if (!appearance) {
+    flavorDiag(`apply: skipped (getAppearanceForDice returned null)`);
+    return;
+  }
   if (!appearance.colorset) {
     appearance.colorset = appearance.name ?? flavor;
   }
+  flavorDiag(`apply: built appearance for ${dieType} ${flavor} →`, {
+    colorset: appearance.colorset,
+    foreground: appearance.foreground,
+    background: Array.isArray(appearance.background) ? `[${appearance.background.length} colors]` : appearance.background,
+    texture: typeof appearance.texture === "object" ? appearance.texture?.name : appearance.texture,
+  });
+
+  // Snapshot mesh state for re-spawn.
+  const persistentId = mesh.userData.persistentId;
+  const ownerUserId = mesh.userData.ownerUserId;
+  const linkGroupId = mesh.userData.linkGroupId;
+  const linkGroupSecondary = mesh.userData.linkGroupSecondary;
+  const digitPlace = mesh.userData.digitPlace;
+  // Approximate canvas-percent position from the mesh's current world
+  // position so the re-spawned mesh appears in the same spot.
+  const pos = (() => {
+    try {
+      const wx = mesh.parent?.position?.x ?? 0;
+      const wz = mesh.parent?.position?.z ?? 0;
+      return dice3d.box?._toPositionPct?.(wx, wz) ?? null;
+    } catch { return null; }
+  })();
 
   try {
-    // Hand the factory a textureCache typed "showcase" — same texture
-    // contents as the persistent cache but the type-string makes
-    // factory.create skip its `physicsWorker.exec("createShape")` branch.
-    // We're only after the material; we don't need a second physics body.
-    const persistCache = dice3d.box?._getPersistentTextureCache?.();
-    const noPhysicsCache = persistCache ? { ...persistCache, type: "showcase" } : null;
-    const tempMesh = await factory.create(noPhysicsCache, dieType, appearance, null);
-    if (!tempMesh?.material) return;
+    // Remove the broadcast-spawned mesh locally (no broadcast — receivers
+    // shouldn't propagate this remove to other clients) and re-spawn it
+    // locally with flavored appearance. The persistentId is preserved so
+    // DSN's throw replay continues to find the mesh by id.
+    //
+    // Why not just swap mesh.material? Three.js material reassignment is
+    // theoretically supported but in practice DSN's renderer has internal
+    // shader+geometry program caches keyed by the original material's
+    // uuid; live-swapping the material doesn't always pick up the new
+    // texture atlas / colorset. Remove+respawn goes through the full
+    // render setup and is reliable. The receiver sees a single-frame
+    // flicker (~16ms) which is imperceptible vs. the throw animation that
+    // typically follows immediately after.
+    await dice3d.removePersistentDie(persistentId, false);
+    await dice3d.spawnPersistentDie(dieType, pos, {
+      ownerUserId,
+      remotePersistentId: persistentId,
+      linkGroupId,
+      linkGroupSecondary,
+      digitPlace,
+      appearance,
+    }, false); // synchronize=false: local-only re-spawn
 
-    // Three.js material assignment takes effect on the next render frame.
-    // The factory's baseMaterialCache and geometry cache mean we don't
-    // dispose anything — the cached resources are shared and re-used.
-    mesh.material = tempMesh.material;
-    log(`task-flavor-sync: applied ${flavor} to ${dieType} (id=${mesh.userData.persistentId})`);
+    // Tag the new mesh so we don't reapply on re-flush of stale pending.
+    const list = game.dice3d?.box?.persistentDiceList ?? [];
+    const newMesh = list.find((m) => m?.userData?.persistentId === persistentId);
+    if (newMesh?.userData) newMesh.userData.dsnPF2eBridge_flavorApplied = flavor;
+
+    flavorDiag(`apply: re-spawned ${dieType} (id=${persistentId}) with ${flavor} colorset`);
   } catch (e) {
-    warn("applyFlavoredMaterialToMesh failed", e);
+    warn("applyFlavoredAppearance failed", e);
+    flavorDiag(`apply: error`, e);
   }
 }
 
@@ -332,11 +398,13 @@ function flushPendingFlavorSync() {
   if (pendingFlavorSync.size === 0) return;
   const list = game.dice3d?.box?.persistentDiceList;
   if (!Array.isArray(list)) return;
+  flavorDiag(`flush: ${pendingFlavorSync.size} pending`);
   for (const [id, entry] of [...pendingFlavorSync]) {
     const mesh = list.find((m) => m?.userData?.persistentId === id);
     if (!mesh) continue;
     pendingFlavorSync.delete(id);
-    applyFlavoredMaterialToMesh(mesh, entry.flavor)
+    flavorDiag(`flush: applying ${entry.flavor} to ${id}`);
+    applyFlavoredAppearance(mesh, entry.flavor)
       .catch((e) => warn("flushPendingFlavorSync failed", e));
   }
 }

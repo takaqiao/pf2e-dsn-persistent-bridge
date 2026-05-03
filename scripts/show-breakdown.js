@@ -1,39 +1,41 @@
 /**
- * Resolve PF2e's `showBreakdown` for an open roll dialog.
+ * Decide whether a roll dialog's outcome should be visible (broadcast as a
+ * "public" task die) or hidden (local-only spawn + ghost-throw replay for
+ * non-GM viewers).
  *
- * Critical: at `renderCheckModifiersDialog` / `renderDamageModifierDialog`
- * time, the *roll* doesn't exist yet — PF2e constructs the CheckRoll /
- * DamageRoll only after the user submits and the dialog resolve()s. So
- * `dialog.check.options.showBreakdown` and `dialog.damage.roll.options
- * .showBreakdown` are both undefined while the dialog is open. We have
- * to compute the equivalent from `dialog.context` ourselves.
+ * **Single authoritative signal: `actor.alliance === "party"`.**
  *
- * Reference (pf2e.mjs in this install):
- *   CheckRoll:
- *     showBreakdown = context.type === "flat-check"
- *                  || game.pf2e.settings.metagame.breakdowns
- *                  || !!context.actor?.hasPlayerOwner
+ * PF2e ships an explicit alliance system (`actor.system.details.alliance`,
+ * one of "party" / "opposition" / null). It's the cleanest "ally vs enemy
+ * vs neutral" signal in the data model and exactly maps to the user's
+ * intent: ally rolls broadcast, enemy / neutral rolls don't. The earlier
+ * cascading heuristic (type === "character" || parties.size > 0 ||
+ * hasPlayerOwner) was too liberal — NPCs added to a party for tracking
+ * purposes were leaking through the parties.size check even when their
+ * alliance was clearly "opposition".
  *
- *   DamageRoll:
- *     showBreakdown = game.pf2e.settings.metagame.breakdowns
- *                  || !!context.self?.actor?.hasPlayerOwner
+ * Community precedent: pf2e-toolbelt and xdy-pf2e-workbench both use
+ * `alliance === "party"` for their respective ally / party checks.
+ * PF2e's own internal default-resolution pattern is
+ *   `ALLIANCES.has(stored) ? stored : (hasPlayerOwner ? "party" : "opposition")`
+ * (see CharacterPF2e prepare-base-data and damage-system source).
  *
- * Note the actor path differs: CheckModifiersDialog has `context.actor`;
- * DamageModifierDialog wraps it in `context.self.actor`.
+ * Bridge logic (this file) priority-ordered:
  *
- * **Bridge deviation from PF2e**: we additionally treat `actor.type ===
- * "character"` (PC) as breakdown-visible regardless of `hasPlayerOwner`.
- * Why: a GM running a pre-gen, NPC ally, or PC whose player is offline /
- * unassigned has `hasPlayerOwner === false`, which would normally make us
- * spawn task dice local-only and ghost-mirror the throw to other players —
- * even though the GM clearly considers it a "PC" roll and expects players
- * to see real dice. The actor TYPE is the more reliable PC/NPC signal,
- * `hasPlayerOwner` is just a permissions check that doesn't always match
- * intent. We still respect `hasPlayerOwner` for non-character actor types
- * (npc / hazard / vehicle) to keep the value-leak protection for genuinely
- * GM-controlled entities.
+ *   1. Stored alliance is one of "party" / "opposition" / null → use it.
+ *      "party" = visible, "opposition" / null = hidden. This is the GM's
+ *      explicit classification and we always honor it.
  *
- * Returns true (visible) when nothing in the context tells us otherwise.
+ *   2. Stored alliance is undefined (sparse old saves, custom actor types
+ *      without the field initialized) → fall back to type+ownership:
+ *        - `actor.type === "character"` → visible (covers GM-only PCs,
+ *          pre-gens, PCs whose player isn't online — these still feel
+ *          like PCs to the GM regardless of player assignment)
+ *        - else → `hasPlayerOwner` (PF2e's stock fallback)
+ *
+ * Note: this controls only the BRIDGE's broadcast / ghost-mirror decision.
+ * PF2e's own chat tooltip "show breakdown" still uses its own logic
+ * (`metagame.breakdowns || hasPlayerOwner`) — we don't override that.
  */
 
 function metagameAllowsBreakdown() {
@@ -45,8 +47,15 @@ function metagameAllowsBreakdown() {
 }
 
 function actorIsBreakdownVisible(actor) {
-  if (!actor) return null; // signal: caller should fall back
+  if (!actor) return null; // signal: caller falls back to safe default
+  const stored = actor.alliance;
+  if (stored === "party") return true;
+  if (stored === "opposition") return false;
+  if (stored === null) return false; // explicit neutral
+  // Stored is undefined — actor lacks an explicit alliance setting.
+  // Promote character actors regardless of ownership (covers GM-only PCs).
   if (actor.type === "character") return true;
+  // Other actor types: PF2e's stock fallback.
   return !!actor.hasPlayerOwner;
 }
 
