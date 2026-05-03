@@ -4,6 +4,15 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.3.1 — Right-click reliability
+
+- Fixed: right-click to throw would silently stop working after a window
+  resize or a DSN performance preset change. Right-clicking would just
+  pick up the die (DSN's default) instead of throwing it.
+- Added unconditional console diagnostic logs for right-click attempts
+  (tagged `[PF2e×DSN right-click]`) — when a click misses, the log says
+  why (no die under cursor / locked to someone else / mid-throw / etc.).
+
 ## 0.3.0 — Polish & docs
 
 - All settings descriptions rewritten in plain language. No more code
