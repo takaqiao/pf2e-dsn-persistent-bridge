@@ -1,7 +1,7 @@
-import { MOD_ID, PENDING_TTL_MS } from "./constants.js";
+import { PENDING_TTL_MS } from "./constants.js";
 
 /**
- * Slot state machine: empty → filled → locked.
+ * Slot state machine: empty → filled.
  * One SlotStore per open PF2e roll dialog.
  *
  * The store is also the bridge to the evaluate wrapper:
@@ -12,7 +12,6 @@ import { MOD_ID, PENDING_TTL_MS } from "./constants.js";
 const STATES = Object.freeze({
   EMPTY: "empty",
   FILLED: "filled",
-  LOCKED: "locked",
 });
 
 // dialog.appId -> SlotStore
@@ -27,6 +26,7 @@ export class SlotStore {
     this.slots = slotDescriptors.map((d) => ({
       key: d.key,
       faces: d.faces,
+      flavor: d.flavor ?? null,
       state: STATES.EMPTY,
       value: null,
       sourceMeshId: null,
@@ -62,48 +62,6 @@ export class SlotStore {
     return slot;
   }
 
-  toggleLock(key) {
-    const slot = this.slots.find((s) => s.key === key);
-    if (!slot) return;
-    if (slot.state === STATES.FILLED) slot.state = STATES.LOCKED;
-    else if (slot.state === STATES.LOCKED) slot.state = STATES.FILLED;
-    this.notify();
-  }
-
-  clearSlot(key) {
-    const slot = this.slots.find((s) => s.key === key);
-    if (!slot || slot.state === STATES.LOCKED) return;
-    releaseMeshClaim(slot.sourceMeshId);
-    slot.state = STATES.EMPTY;
-    slot.value = null;
-    slot.sourceMeshId = null;
-    this.notify();
-  }
-
-  clearAllUnlocked() {
-    for (const slot of this.slots) {
-      if (slot.state === STATES.LOCKED) continue;
-      releaseMeshClaim(slot.sourceMeshId);
-      slot.state = STATES.EMPTY;
-      slot.value = null;
-      slot.sourceMeshId = null;
-    }
-    this.notify();
-  }
-
-  rngAll() {
-    // Mark every slot as "explicitly empty" so submit doesn't push predetermined values.
-    for (const slot of this.slots) {
-      if (slot.state !== STATES.LOCKED) {
-        releaseMeshClaim(slot.sourceMeshId);
-        slot.state = STATES.EMPTY;
-        slot.value = null;
-        slot.sourceMeshId = null;
-      }
-    }
-    this.notify();
-  }
-
   /**
    * Build the predetermined queue used by evaluate-wrapper.
    * Returns array in slot order; each entry is {faces, value} or null for "leave to RNG".
@@ -112,13 +70,6 @@ export class SlotStore {
     return this.slots.map((s) =>
       s.state === STATES.EMPTY ? null : { faces: s.faces, value: s.value }
     );
-  }
-
-  /** Mesh ids that were used to fill slots, so we can auto-remove after consume. */
-  getConsumedMeshIds() {
-    return this.slots
-      .filter((s) => s.state !== STATES.EMPTY && s.sourceMeshId)
-      .map((s) => s.sourceMeshId);
   }
 }
 
@@ -130,13 +81,6 @@ export const SlotRegistry = {
   },
   get(appId) { return stores.get(appId); },
   delete(appId) { stores.delete(appId); },
-  forUser(userId) {
-    const out = [];
-    for (const s of stores.values()) {
-      if (!userId || s.dialog?.user?.id === userId || !s.dialog?.user) out.push(s);
-    }
-    return out;
-  },
   /** All currently-open SlotStores (used by DSN listener to dispatch). */
   all() { return [...stores.values()]; },
 };
@@ -166,20 +110,4 @@ export const PendingQueue = {
     }
     return entry;
   },
-  clear(userId) { PENDING.delete(userId); },
 };
-
-/** Find the mesh by persistentId in DSN's live list and unset our consumed flag. */
-function releaseMeshClaim(meshId) {
-  if (!meshId) return;
-  const list = game?.dice3d?.box?.persistentDiceList;
-  if (!Array.isArray(list)) return;
-  for (const m of list) {
-    if (m?.userData?.persistentId === meshId) {
-      if (m.userData) m.userData.dsnPF2eBridge_consumed = false;
-      return;
-    }
-  }
-}
-
-export { STATES };

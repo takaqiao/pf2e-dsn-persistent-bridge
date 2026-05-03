@@ -157,4 +157,13 @@ export function registerSettings() {
     type: Boolean,
     default: true,
   });
+
+  game.settings.register(MOD_ID, SETTINGS.registerPf2eColorsets, {
+    name: `${MOD_ID}.settings.registerPf2eColorsets.name`,
+    hint: `${MOD_ID}.settings.registerPf2eColorsets.hint`,
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
 }

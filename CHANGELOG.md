@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.7 — 2026-05-03
+
+### Features
+
+- **Per-damage-type colorsets for task dice (DSN 6.0+ feature, made to work for PF2e).** Previously DSN's per-damage-type styling produced no effect for ~11 of PF2e's 16 damage types because DSN ships built-in colorsets named after D&D damage types (lightning, thunder, radiant, necrotic…) that don't match PF2e's tags (electricity, sonic, vitality, void, spirit, mental, bleed, slashing, piercing, bludgeoning, untyped). On startup the module now registers those missing PF2e-named colorsets in DSN's `br` registry under the `DICESONICE.DamageTypes` category, so they appear as configurable rows in `Module Settings → Dice So Nice → Damage Type Configuration` alongside DSN's built-ins, and apply automatically to per-flavor styled rolls. Each registered colorset has sensible defaults (electricity = electric yellow on ice, sonic = cyan on stone, vitality = warm gold on stone, void = dark purple on marble, …) — borrowed/adapted from `pf2e-dice-flavor-fix`'s palette so users don't have to manually configure to see distinct colors out of the box. Skipped automatically when `pf2e-dice-flavor-fix` is active. Toggle: client setting `registerPf2eColorsets` (default on).
+- **Spawned task dice now respect the user's per-damage-type colorset.** When a damage roll dialog opens, the bridge extracts each die's damage type from `formulaData.base[].damageType` and passes it through DSN's `getAppearanceForDice(raw, dieType, {options: {type, flavor}})` to build the per-die appearance. The same flavor flows through every spawn path: opener-side task dice, secret-mirror receivers (each receiver builds appearance from THEIR own DSN settings, not the opener's), hidden-viewer ephemeral throw replays, and direct-Roll-button chat-message mirrors. Respects DSN's `enableFlavorColorset` toggle.
+
+### Fixes
+
+- **PF2e v8 nested `formulaData.base[].terms[]` not recognized — task dice spawned with no flavor.** Modern PF2e moved dice specs out of direct `diceNumber` / `dieSize` fields into a nested `terms[]` array (`{dice: {number, faces}, modifier?}`). The previous extractor read only the legacy fields, so for any v8 damage roll the slot's flavor was never set, and task dice spawned with the user's default appearance instead of the per-flavor colorset. Now reads `entry.terms[]` first and falls back to legacy fields. Affects both `attachDamageFlavors` (primary path, button-text-derived slots) and `slotsFromFormulaData` (fallback path used when the submit-button text isn't available yet).
+- **`getAppearanceForDice` returns appearance with `colorset: undefined`.** DSN's colorset registry stores the name in a `name` field, not a `colorset` field. When `getAppearanceForDice` resolves a damage-type mapping it spreads `br[colorsetName]` into the result, leaving `colorset` undefined. Downstream `generateMaterialData` then uses `appearance.colorset` to re-look-up the colorset for "custom" fallbacks, finds undefined, and falls back to `br.custom` (= the user's customized default) — which then bleeds the user's default colors into the material despite the resolved appearance having the right `foreground` / `background` / `texture` directly. Symptom: persistent task die spawns with user's default appearance instead of the flavored colorset, even though `getAppearanceForDice`'s direct return values look correct in a debugger. Fix: write the colorset name back onto the result object via `base.colorset = base.name ?? flavor`.
+- **Auto-submit broken after the user adds dice mid-dialog (e.g. clicking PF2e's "+ Add" button to attach a fire damage die to a piercing weapon attack).** Three subtle bugs converged here: ① our subscriber's `triggerSubmit` was using the `root` captured at injectTray time, but PF2e re-renders the dialog when the user adds dice, so by the time the auto-submit timer fired the `root` was a detached DOM tree — `submitBtn.click()` on a detached button doesn't dispatch the form's submit handler. Fix: query `app.element` (always the live root) instead. ② `store._autoSubmitted` was set on the previous shape's auto-submit attempt and never reset on shape change, so even if the new fill wave should have re-triggered, the guard blocked it. Fix: clear the flag in the `slotsShapeChanged` branch. ③ `bindMessageModeWatcher` short-circuited on every re-render via `store._modeWatcherBound`, so the message-mode change handler stayed bound to the original (now detached) `<select>` element and the live select had no listener. Fix: remove the guard, bind every render.
+- **Hidden-viewer ephemeral mirrors lost flavor styling on healing rolls.** PF2e tags healing-capable rolls with a compound flavor like `[damage,healing,vitality]` instead of bare `[vitality]`. Our `createChatMessage` mirror path was passing this whole string as `flavor` to receivers, which DSN's `detectDamageType` returned verbatim, then `resolveDamageTypeMapping` failed the `br[flavor]` lookup because no colorset is named "damage,healing,vitality". The fix splits the flavor on commas and finds the first token that's a known PF2e damage type — bare flavors like "fire" pass through unchanged. Same parsing now applies to `roll.type` (which DamageInstance also exposes as the bare type) so it's preferred over the compound term.options.
+- **PF2e compatibility version updated** from 7 to 8 in `relationships.systems` (current PF2e is 8.0.3).
+
+### Diagnostics
+
+New diagnostic API methods on `game.modules.get("pf2e-dsn-persistent-bridge").api` for support / debugging:
+
+- `diagnose()` — overall module health (DSN active, libWrapper active, persistent dice setting, etc.) — pre-existing.
+- `diagnoseFlavor(dieType, flavor)` — end-to-end colorset resolution check for a given die type + damage type. Reports DSN colorset registry coverage for all 16 PF2e damage types, the user's `enableFlavorColorset` state, the resolved appearance for a synthetic flavor query, and the user's raw default appearance.
+- `diagnoseTaskDice()` — lists each task die currently on canvas with its damage-type tag and runtime material info.
+- `diagnoseDialog()` — dumps the formulaData structure of any open PF2e check/damage dialog as readable JSON (button text, `base[].terms[]`, `dice[]`, etc.), so users (or future me) can verify our flavor extraction handles new PF2e formula structures.
+
+### Cleanup
+
+- **Removed ~110 lines of dead UI code from older slot-tray designs**:
+  - `slot-store.js`: 4 unused methods (`toggleLock`, `clearSlot`, `clearAllUnlocked`, `rngAll`), the `releaseMeshClaim` helper that only those methods called, the unreachable `STATES.LOCKED` enum value, the never-used `forUser` / `getConsumedMeshIds` methods, and the never-called `PendingQueue.clear`. Plus the unused `MOD_ID` import. Net –73 lines.
+  - `ui-injector.js`: per-slot lock binding (`[data-action="dsn-toggle-lock"]` querySelector that no template element matches) + `lockIcon` / `lockTooltip` per-slot data computation that the current template doesn't render. Net –14 lines.
+  - `lang/en.json` + `lang/zh-CN.json`: 7 unused i18n keys (`tray.clearAll`, `clearAllTooltip`, `rngAll`, `rngAllTooltip`, `lock`, `unlock`, `resetSlotTooltip`).
+  - `styles/dsn-bridge.css`: `.dsn-slot.state-locked` (state never reached at runtime), `.dsn-mini`, `.dsn-slot-controls`, `.dsn-slot:has(.dsn-slot-controls)` — none referenced in any template or runtime DOM.
+- Slot state machine simplified: was `empty → filled → locked` with the `LOCKED` state reachable only via the now-removed `toggleLock`. Now just `empty → filled`.
+
 ## 0.2.6 — 2026-05-02
 
 ### Fixes

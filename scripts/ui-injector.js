@@ -75,8 +75,14 @@ async function injectTray(app, $html) {
     if (slotsShapeChanged(store, descriptors)) {
       cleanupTaskDiceForStore(store);
       store.slots = descriptors.map((d) => ({
-        key: d.key, faces: d.faces, state: "empty", value: null, sourceMeshId: null,
+        key: d.key, faces: d.faces, flavor: d.flavor ?? null,
+        state: "empty", value: null, sourceMeshId: null,
       }));
+      // Reset auto-submit guard — the previous shape may have triggered it
+      // (e.g., user filled, scheduled timer, then added more dice before the
+      // timer fired). The new shape's slots are all empty, so the next fill
+      // wave should be free to auto-submit.
+      delete store._autoSubmitted;
       // Re-spawn for the new shape on the next tick
       spawnTaskDiceForStore(store).catch((e) => err("respawn failed", e));
     } else if (isFresh && descriptors.length > 0) {
@@ -202,12 +208,6 @@ async function renderTrayHTML(app, store) {
       value: s.value,
       hidden: s.hidden === true,
       displayValue: s.hidden === true ? "?" : s.value,
-      lockIcon: s.state === "locked" ? "fa-lock" : "fa-lock-open",
-      lockTooltip: game.i18n.localize(
-        s.state === "locked"
-          ? `${MOD_ID}.tray.unlock`
-          : `${MOD_ID}.tray.lock`
-      ),
     })),
   };
   const renderer = foundry?.applications?.handlebars?.renderTemplate ?? globalThis.renderTemplate;
@@ -217,14 +217,6 @@ async function renderTrayHTML(app, store) {
 function bindTrayHandlers(root, store) {
   const tray = root.querySelector(`.dsn-bridge-tray[data-app-id="${store.dialogId}"]`);
   if (!tray) return;
-
-  tray.querySelectorAll('[data-action="dsn-toggle-lock"]').forEach((b) =>
-    b.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      const key = parseInt(ev.currentTarget.dataset.key, 10);
-      store.toggleLock(key);
-    })
-  );
 
   // Access lock: toggle whether other players can drag/throw the task dice.
   tray.querySelectorAll('[data-action="dsn-toggle-access"]').forEach((b) =>
@@ -270,8 +262,12 @@ function bindTrayHandlers(root, store) {
 function bindMessageModeWatcher(root, store, app) {
   const select = root.querySelector('select[name="messageMode"]');
   if (!select) return;
-  if (store._modeWatcherBound) return;
-  store._modeWatcherBound = true;
+  // Bind every re-render. Why: PF2e re-renders the dialog whenever the user
+  // adds/removes dice or toggles modifiers — the OLD select element gets
+  // detached, taking its event listener with it (still bound but never fires
+  // since the element is no longer in the live DOM). The previous version
+  // guarded with `store._modeWatcherBound` and only bound once, leaving every
+  // post-first-render dialog without a working messageMode change handler.
 
   select.addEventListener("change", async () => {
     log("messageMode changed →", select.value, "; re-evaluating spawn");
@@ -282,7 +278,8 @@ function bindMessageModeWatcher(root, store, app) {
       delete store._ceremonial;
       // Reset slot values too (a freshly opened mode shouldn't keep stale fills)
       store.slots = store.slots.map((s) => ({
-        key: s.key, faces: s.faces, state: "empty", value: null, sourceMeshId: null,
+        key: s.key, faces: s.faces, flavor: s.flavor ?? null,
+        state: "empty", value: null, sourceMeshId: null,
       }));
       delete store._autoSubmitted;
       await spawnTaskDiceForStore(store);
@@ -295,7 +292,14 @@ function bindMessageModeWatcher(root, store, app) {
 
 function triggerSubmit(app, root) {
   try {
-    const form = root.querySelector("form.check-modifiers-content");
+    // Always query the LIVE app element. PF2e re-renders the dialog when the
+    // user adds/removes dice (via the "+ Add" button) — the captured `root`
+    // from the previous render becomes detached, and `.click()` on a detached
+    // button doesn't dispatch the form's submit handler. `app.element` always
+    // points at the live root after each re-render. Fall back to `root` only
+    // if app.element isn't accessible.
+    const liveRoot = app?.element?.[0] ?? app?.element ?? root;
+    const form = liveRoot?.querySelector?.("form.check-modifiers-content");
     const submitBtn = form?.querySelector('button[type=submit]');
     if (!submitBtn) return;
     // Click the actual submit button so PF2e's existing handler runs (it

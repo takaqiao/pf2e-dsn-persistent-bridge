@@ -194,11 +194,6 @@
   box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08), 0 1px 1px rgba(0,0,0,0.04);
   transition: border-color 0.15s, background 0.15s, transform 0.12s;
 }
-.dsn-slot:has(.dsn-slot-controls) {
-  grid-template-rows: 14px 1fr 18px;
-  height: 78px;
-}
-
 .dsn-slot-tag {
   font-family: var(--font-monospace, "Courier New", monospace);
   font-size: 0.72em;
@@ -226,12 +221,6 @@
 .dsn-slot-placeholder {
   color: rgba(110, 110, 110, 0.55);
   font-size: 1.1em;
-}
-
-.dsn-slot-controls {
-  display: inline-flex;
-  gap: 3px;
-  align-items: center;
 }
 
 /* State: empty — dashed outline + soft pulse, no big bar */
@@ -269,15 +258,6 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* State: locked — amber frame + bold number + subtle glow */
-.dsn-slot.state-locked {
-  border-color: #c5891e;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.0)),
-    rgba(220, 150, 30, 0.16);
-  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.08), 0 0 5px rgba(197, 137, 30, 0.35);
-}
-.dsn-slot.state-locked .dsn-slot-value { color: #7a4d00; }
 .dsn-slot .dsn-slot-value-hidden {
   color: #555 !important;
   font-style: italic;
@@ -290,18 +270,6 @@
 }
 
 .dsn-slot:hover { transform: translateY(-1px); }
-
-.dsn-mini {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: 1px 4px;
-  font-size: 0.78em;
-  color: #666;
-  border-radius: 3px;
-  line-height: 1;
-}
-.dsn-mini:hover { background: rgba(0, 0, 0, 0.08); color: #222; }
 
 .dsn-bridge-tray .dsn-hint {
   margin: 6px 0 0;

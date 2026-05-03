@@ -18,15 +18,8 @@
       "secretBanner": "Secret roll — you won't see the dice result. Falling back to system RNG.",
       "ceremonialBanner": "Blind ritual — the ghost dice on canvas show \"?\" on every face. Throw them for the feel; the real result happens via system RNG on the GM's side.",
       "hint": "Drag-shake or right-click the dice to throw. Ctrl+click multi-select then right-click throws all.",
-      "clearAll": "Clear",
-      "clearAllTooltip": "Clear all unlocked slots",
-      "rngAll": "RNG All",
-      "rngAllTooltip": "Reset all unlocked slots and let PF2e roll them randomly",
       "selectAll": "Select all",
       "selectAllTooltip": "Select every task die for this roll so you can throw them all in one drag (equivalent to Ctrl+clicking each).",
-      "lock": "Lock this die",
-      "unlock": "Unlock this die",
-      "resetSlotTooltip": "Clear this slot",
       "accessLocked": "Mine only",
       "accessUnlocked": "Anyone",
       "lockAccessTooltip": "Re-lock — other players cannot drag the task dice for this roll",
@@ -125,6 +118,10 @@
       "mirrorThrowToHiddenViewers": {
         "name": "Mirror task throws to hidden viewers",
         "hint": "Default on (world setting). When a player whose DSN visibility is 'Show only mine' or 'Hide all' would otherwise see nothing of another player's task-die throw, play a brief ephemeral 3D animation on their canvas with the predetermined result. Idle dice still don't appear — they only see the throw moment, then the dice vanish. Disable to keep hidden-viewer mode strict (no animation at all)."
+      },
+      "registerPf2eColorsets": {
+        "name": "Register PF2e damage-type colorsets in DSN",
+        "hint": "Default on. DSN ships built-in colorsets named after D&D damage types (lightning, thunder, radiant, necrotic…) — names that don't match what PF2e tags rolls with (electricity, sonic, vitality, void…). On first load this module registers the missing PF2e-named colorsets so they appear in DSN's Damage Type Configuration alongside the built-ins, and so per-flavor styling applies to your rolls (including spawned task dice). Skipped automatically when 'PF2e Dice Flavor Fix' is active. To customize: GM-only Module Settings → Dice So Nice → Damage Type Configuration."
       }
     }
   }

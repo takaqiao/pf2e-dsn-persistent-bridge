@@ -18,15 +18,8 @@
       "secretBanner": "暗骰模式 — 你不会看到骰子结果。模块已自动让位给系统随机数。",
       "ceremonialBanner": "暗骰仪式 — 画布上的鬼骰每面都是 \"?\",你扔了纯仪式感,真实结果在 GM 那里走系统随机。",
       "hint": "拖动摇晃或右键扔骰子。Ctrl+多选后右键一次扔全部。",
-      "clearAll": "清空",
-      "clearAllTooltip": "清空所有未锁定的槽",
-      "rngAll": "全 RNG",
-      "rngAllTooltip": "把所有未锁定的槽交给 PF2e 系统随机产生",
       "selectAll": "全选",
       "selectAllTooltip": "选中本次所有任务骰子,可以一次性拖拽全部扔出(等价于 Ctrl+点击每个骰子)",
-      "lock": "锁定此骰",
-      "unlock": "解锁此骰",
-      "resetSlotTooltip": "清空此槽",
       "accessLocked": "仅自己可扔",
       "accessUnlocked": "全员可扔",
       "lockAccessTooltip": "重新锁定 — 其他玩家无法拖动这次的任务骰",
@@ -125,6 +118,10 @@
       "mirrorThrowToHiddenViewers": {
         "name": "为隐藏视角玩家镜像投掷动画",
         "hint": "默认开启(世界设置)。当某个玩家的 DSN visibility 设为「仅显示自己」或「全部隐藏」,他原本看不到任何其他玩家的任务骰投掷动画。开启后会在他画布上播放一段简短的 ephemeral 3D 动画(预定结果),平时画布依旧干净 —— 他只看到投掷瞬间,落地后骰子消失。关闭则严格遵循 hidden-viewer 模式(完全没有动画)。"
+      },
+      "registerPf2eColorsets": {
+        "name": "向 DSN 注册 PF2e 伤害类型色板",
+        "hint": "默认开启。DSN 自带的伤害类型色板都是 D&D 风(lightning / thunder / radiant / necrotic 等),名字和 PF2e 实际打的 tag(electricity / sonic / vitality / void 等)对不上 —— 导致 DSN 「按伤害类型上色」功能对 PF2e 大半不生效。开启后,本模组在启动时把这些缺失的 PF2e 类型色板注册进 DSN,它们会作为新行出现在 DSN 的「Damage Type Configuration」里,同时你的伤害骰(包括 task 骰)按伤害类型自动上色。检测到「PF2e Dice Flavor Fix」激活时自动跳过。需要自定义:模组设置 → Dice So Nice → Damage Type Configuration(仅 GM 可见)。"
       }
     }
   }

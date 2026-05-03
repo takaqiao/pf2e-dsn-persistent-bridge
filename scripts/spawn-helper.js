@@ -133,16 +133,57 @@ async function spawnPersistentDieEphemeral(dice3d, dieType, position, opts, sync
   return mesh;
 }
 
-function buildGhostAppearance(dieType) {
+/**
+ * Build the appearance object for a task die spawn. Combines two concerns:
+ *
+ *   • Per-damage-type colorset (DSN 6.0+): when `slot.flavor` is set (a PF2e
+ *     damage type like "fire" / "slashing") and the user has DSN's
+ *     `enableFlavorColorset` toggle on, pass the flavor as a term-shaped
+ *     argument to `getAppearanceForDice` so DSN's `damageTypeMap` lookup
+ *     applies the user's configured per-type appearance.
+ *   • Ghost flag (ceremonial blind/gm): the player opener of a ceremonial
+ *     roll sees "?" on every face. We layer `isGhost: true` on top of the
+ *     flavored base so the ghost dice still respect the user's per-type
+ *     colorset (just with hidden numbers).
+ *
+ * Returns null when nothing custom is needed (no flavor + no ghost) so the
+ * caller can omit `spawnOpts.appearance` and let DSN's spawnPersistentDie
+ * pick its default unconditionally.
+ */
+function buildSlotAppearance(dieType, flavor, { ghost } = {}) {
+  if (!flavor && !ghost) return null;
   try {
     const Dice3DCls = game.dice3d?.constructor;
     const factory = game.dice3d?.DiceFactory;
     if (!Dice3DCls?.APPEARANCE || !factory?.getAppearanceForDice) return null;
+
     const raw = Dice3DCls.APPEARANCE(game.user);
-    const base = factory.getAppearanceForDice(raw, dieType);
-    return { ...base, isGhost: true };
+    const flavorEnabled =
+      flavor && game.dice3d?.userConfig?.enableFlavorColorset !== false;
+    // Set BOTH `type` (DSN's primary key, what we control) and `flavor`
+    // (what PF2e's chat-message rolls actually carry — kept as a
+    // belt-and-braces fallback in case some user setup or future DSN
+    // version reads only the flavor field).
+    const term = flavorEnabled ? { options: { type: flavor, flavor } } : null;
+    const base = factory.getAppearanceForDice(raw, dieType, term);
+
+    // CRITICAL: getAppearanceForDice spreads `br[colorset]` into the result
+    // when a damage type maps. The colorset object stores its name in `name`,
+    // not `colorset`, so the result ends up with `colorset: undefined`. Down-
+    // stream `generateMaterialData` uses `appearance.colorset` to re-lookup
+    // the colorset for "custom" fallbacks — undefined means it falls back to
+    // `br.custom` (= user's customized default), which then bleeds into the
+    // material. Symptom: persistent task die spawns with user's default
+    // appearance instead of the flavored colorset, even though `getAppearance
+    // ForDice`'s direct return values (foreground/background/texture) are
+    // correct. Fix: write the colorset name back onto the result.
+    if (base && flavor && flavorEnabled && !base.colorset) {
+      base.colorset = base.name ?? flavor;
+    }
+
+    return ghost ? { ...base, isGhost: true } : base;
   } catch (e) {
-    warn("buildGhostAppearance failed", e);
+    warn("buildSlotAppearance failed", e);
     return null;
   }
 }
@@ -271,14 +312,20 @@ export async function spawnTaskDiceForStore(store) {
     const pos = positions[i];
     try {
       const spawnOpts = { ownerUserId: game.user.id };
-      if (secrecy.ceremonial) {
-        const ghost = buildGhostAppearance(dieType);
-        if (ghost) {
-          spawnOpts.appearance = ghost;
-          log("autoSpawn: ghost appearance attached", { dieType, isGhost: ghost.isGhost });
-        } else {
-          warn(`autoSpawn: ghost appearance build failed for ${dieType} — falling back to normal die (player may see real value!)`);
+      const appearance = buildSlotAppearance(dieType, slot.flavor, {
+        ghost: secrecy.ceremonial,
+      });
+      if (appearance) {
+        spawnOpts.appearance = appearance;
+        if (secrecy.ceremonial) {
+          log("autoSpawn: ghost appearance attached", {
+            dieType, flavor: slot.flavor ?? null, isGhost: !!appearance.isGhost,
+          });
+        } else if (slot.flavor) {
+          log("autoSpawn: flavored appearance attached", { dieType, flavor: slot.flavor });
         }
+      } else if (secrecy.ceremonial) {
+        warn(`autoSpawn: ghost appearance build failed for ${dieType} — falling back to normal die (player may see real value!)`);
       }
       const mesh = await spawnPersistentDieEphemeral(dice3d, dieType, pos, spawnOpts, synchronize);
 
@@ -325,6 +372,7 @@ export async function spawnTaskDiceForStore(store) {
           position: pos,
           persistentId: mesh.userData.persistentId,
           openerUserId: game.user.id,
+          flavor: slot.flavor ?? null,
         });
       }
       // (No persistence stripping needed — spawnPersistentDieEphemeral
@@ -336,6 +384,10 @@ export async function spawnTaskDiceForStore(store) {
       // dice, the slot value will be marked `hidden` so the player's
       // tray doesn't display it.
       mesh.userData.dsnPF2eBridge_owned = true;
+      // Stash the damage type so the task-mirror-throw flow (hidden-viewer
+      // ephemeral animation) can replay this die with the receiver's per-
+      // type colorset, even though the persistent mesh was already cleaned.
+      if (slot.flavor) mesh.userData.dsnPF2eBridge_flavor = slot.flavor;
       // When DSN visibility=none, force this task die visible despite the
       // global hide-all (other persistent dice on the user's canvas stay
       // hidden). The visibility patch in dsn-visibility.js honors this tag.

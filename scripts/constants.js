@@ -18,6 +18,7 @@ export const SETTINGS = {
   autoSelectAllOnSpawn: "autoSelectAllOnSpawn",
   rightClickAutoThrow: "rightClickAutoThrow",
   mirrorThrowToHiddenViewers: "mirrorThrowToHiddenViewers",
+  registerPf2eColorsets: "registerPf2eColorsets",
   verboseLogging: "verboseLogging",
 };
 
