@@ -4,6 +4,17 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.2 — Shake sensitivity feels natural now
+
+- Fixed: at low thresholds the throw still didn't always trigger, because
+  the natural human gesture is "wind up briefly, then release" — people
+  don't hold the mouse down until the trigger heuristic catches up.
+  Added a release-time check: if you held a die and moved it at all
+  during the hold, releasing the mouse now throws the die. DSN's own
+  velocity calculation handles direction from your drag path.
+- Slightly more aggressive mid-drag velocity bypass too, so a faster
+  flick triggers even sooner.
+
 ## 0.4.1 — Shake sensitivity, made actually sensitive
 
 Three follow-ups on 0.4.0:
