@@ -4,6 +4,21 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.0 — 2026-05-03
+
+### Features
+
+- **User-configurable shake-to-throw sensitivity (`scripts/shake-sensitivity.js`).** DSN's `InputHandler.onMouseMove` accumulates `mouse.shakeCount` (zero-crossing direction reversals via the dot product of consecutive segments) and `mouse.spinAccum` (rotational momentum via the cross product), and triggers `_activatePreRoll()` when either exceeds a hardcoded `m=5` / `g=5`. The exact site, near the end of the move handler: `(this.mouse.shakeCount>=m||Math.abs(this.mouse.spinAccum)>=g)&&this._activatePreRoll()` (DSN main.js, minified). Some users find m/g=5 too stiff. We add a `shakeThreshold` setting (1–10, default 5, client scope, range slider in standard panel) and override the trigger via two prototype patches:
+  - **`_activatePreRoll` wrap** — suppresses calls when `shakeCount < threshold && |spinAccum| < threshold`. Used when the user's threshold is HIGHER than DSN's 5: DSN itself fires the trigger from `onMouseMove`, and our wrap sits in the path to hold it off.
+  - **`onMouseMove` wrap** — runs DSN's original handler, then re-checks shake state against our threshold. When `threshold < 5` and either accumulator has crossed it (and `mouse.preRoll` is still false, and there's something in `mouse.heldPersistentDice`), call `origActivate.call(this)` directly (the captured original, NOT `this._activatePreRoll`, to bypass our own suppress wrap above).
+  - Both patches live on `Object.getPrototypeOf(ih)` (i.e., `InputHandler.prototype`) so DSN's `resizeAndRebuild` / perf-preset rebuilds — which discard the live `inputHandler` instance and create a fresh one — automatically inherit our wraps. Same survival pattern as the v0.3.1 right-click fix. Sentinel `proto._dsnBridgeShakePatched` guards idempotency. Install is deferred to `diceSoNiceReady` if `game.dice3d.box.inputHandler` isn't constructed yet at our `ready` time.
+
+- **Slot-tray "Shake" button + DialogV2 popup (`scripts/ui-injector.js`, `templates/slot-tray.hbs`, `styles/dsn-bridge.css`).** New button in the tray's action row, immediately before the perf-preset button. Click opens a `foundry.applications.api.DialogV2.prompt` with: intro line, range slider 1–10 with live numeric display (inline `oninput` updates a sibling `<strong>` element scoped to the dialog's `.dsn-bridge-shake-dialog` container), hint paragraph, Save/Cancel buttons. Save callback parses the slider value via `button.form.elements.threshold` and writes through `game.settings.set`, surfacing a localized confirmation toast `shakeSensitivity.saved` formatted with `{value}`. The button visual style mirrors `.dsn-perf-btn` (same chip-style bordered pill) — separate `.dsn-shake-btn` selector so it can diverge later. Icon: `fa-arrows-spin`. The setting also remains a standard `range` setting in Module Settings, so users who don't open a dialog can still find it via the conventional path.
+
+### Why
+
+- Discord chatter and the user's own observation: shake-to-throw "needs you to wiggle the die very vigorously". Right-click already exists as an alternative for impatient users (v0.2.5+), but for users who want shake-to-throw to feel responsive the only knobs DSN exposes are box-level physics (gravity, simulation time) which affect everything. A single per-user threshold knob is the smallest intervention that fixes the perceived responsiveness without touching DSN's actual physics.
+
 ## 0.3.1 — 2026-05-03
 
 ### Fixes

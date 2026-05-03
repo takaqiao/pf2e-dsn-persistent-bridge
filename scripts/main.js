@@ -12,6 +12,7 @@ import { sweepOrphanTaskDice } from "./spawn-helper.js";
 import { startForeignMirrorCleaner } from "./foreign-mirror-cleaner.js";
 import { installOpenerThrowHook } from "./ephemeral-mirror.js";
 import { installRightClickThrow } from "./right-click-throw.js";
+import { installShakeSensitivity } from "./shake-sensitivity.js";
 import { maybeShowWelcome } from "./welcome.js";
 import { registerPf2eColorsets } from "./pf2e-colorsets.js";
 
@@ -66,6 +67,9 @@ Hooks.once("ready", () => {
   // Right-click on an owned persistent die → throw it in a random
   // direction with min velocity (no shake required).
   installRightClickThrow();
+  // Shake-to-throw sensitivity override. Patches DSN's hardcoded threshold
+  // of 5 with our user-configurable 1–10. Same prototype-patch pattern.
+  installShakeSensitivity();
   // Register colorsets for PF2e damage types DSN doesn't ship by name
   // (electricity / sonic / vitality / void / spirit / mental / bleed /
   // slashing / piercing / bludgeoning / untyped). DSN's damageTypeMap

@@ -89,6 +89,23 @@
 }
 .dsn-perf-btn:hover { filter: brightness(1.05); }
 .dsn-perf-btn .fa-bolt { font-size: 0.85em; }
+
+/* Shake-sensitivity button — same visual family as the perf-preset button. */
+.dsn-shake-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 0.78em;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--color-border-light-2, #b8aa8a);
+  color: #555;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.dsn-shake-btn:hover { filter: brightness(1.05); }
+.dsn-shake-btn .fa-arrows-spin { font-size: 0.85em; }
 .dsn-perf-btn.perf-low {
   background: rgba(72, 176, 128, 0.10);
   border-color: #3f8f64;
