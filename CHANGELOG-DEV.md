@@ -4,6 +4,25 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.3.1 — 2026-05-03
+
+### Fixes
+
+- **Right-click throw silently broke after `box._buildDiceBox()` rebuilds.** DSN re-creates the `DiceBox` (and a fresh `inputHandler` instance with it) on window resize via `resizeAndRebuild`, on DSN performance / quality changes, and on settings reloads. v0.2.5's right-click implementation patched `inputHandler.onMouseDown` on the LIVE instance — every rebuild stripped the patch, leaving DSN's stock pickup-on-mousedown behavior in place, so right-click started picking dice up instead of throwing them. Fix: patch `Object.getPrototypeOf(inputHandler).onMouseDown` (i.e., `InputHandler.prototype.onMouseDown`) instead. Class methods live on the prototype, so all current and future InputHandler instances inherit our wrapper automatically. Idempotency guarded via a `proto._dsnBridgeRightClickPatched` sentinel.
+
+### Diagnostics
+
+- Added unconditional `[PF2e×DSN right-click]`-tagged console logs at every step of the right-click flow:
+  - On install: `installed (prototype-patched, survives box rebuilds)` confirming the patch landed.
+  - On miss: explicit reason (`no die under cursor`, `not a persistent die`, `owned by X (you're Y)`, `locked to X`, `currently replaying a remote throw`, `currently mid-throw (settle in progress)`).
+  - On hit: `thrown N die(s)`.
+
+## 0.3.0 — 2026-05-03
+
+(Polish-only release — see CHANGELOG.md for the user-facing summary. No
+behavior changes; settings descriptions rewritten in plain language,
+CHANGELOG split into user / dev versions, three orphan lang keys removed.)
+
 ## 0.2.9 — 2026-05-03
 
 ### Fixes

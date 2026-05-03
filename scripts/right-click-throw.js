@@ -22,6 +22,23 @@ const LEGACY_TO_METERS = 0.016 / 50;
 const MIN_THROW_VELOCITY = 1200 * LEGACY_TO_METERS;
 const THROW_LOFT_Y = 2333 * LEGACY_TO_METERS;
 
+const RC_TAG = "[PF2e×DSN right-click]";
+const rcDiag = (...a) => console.log(RC_TAG, ...a);
+
+function describeUnthrowable(d) {
+  if (!d?.userData) return "no userData";
+  if (d.userData.persistent !== true) return "not a persistent die";
+  if (d.userData.ownerUserId !== game.user?.id) {
+    return `owned by ${d.userData.ownerUserId} (you're ${game.user?.id})`;
+  }
+  if (d.userData.lockedBy && d.userData.lockedBy !== game.user?.id) {
+    return `locked to ${d.userData.lockedBy}`;
+  }
+  if (d.userData.pendingReplay) return "currently replaying a remote throw";
+  if (d.persistentThrow) return "currently mid-throw (settle in progress)";
+  return null;
+}
+
 /**
  * Build a "dramatic" random throw vector. Speed is sampled in [0.7×, 2.6×]
  * of MIN_THROW_VELOCITY, loft in [0.7×, 1.4×]. Result: every right-click
@@ -51,20 +68,29 @@ export function installRightClickThrow() {
   patch(ih);
   installContextMenuSuppression();
   installed = true;
-  log("right-click-throw: installed");
+  rcDiag("installed (prototype-patched, survives box rebuilds)");
 }
 
-function patch(ih) {
-  const orig = ih.onMouseDown.bind(ih);
-  ih.onMouseDown = async function (event, ndc) {
+function patch(instanceFromBox) {
+  // Patch the PROTOTYPE, not the instance. DSN rebuilds the DiceBox (and
+  // its inputHandler instance) on window resize via `resizeAndRebuild` →
+  // `_buildDiceBox`, and any patch on the old instance gets thrown away
+  // with it. Patching the prototype means every InputHandler instance —
+  // current and future — inherits our right-click handling automatically.
+  const proto = Object.getPrototypeOf(instanceFromBox);
+  if (!proto || proto._dsnBridgeRightClickPatched) return;
+  proto._dsnBridgeRightClickPatched = true;
+
+  const orig = proto.onMouseDown;
+  proto.onMouseDown = async function (event, ndc) {
     if (event?.button === 2 && getSetting(SETTINGS.rightClickAutoThrow) !== false) {
-      const handled = await tryRightClickThrow.call(this, event, ndc);
+      await tryRightClickThrow.call(this, event, ndc);
       // Return value semantics: DSN treats truthy as "captured" and does
       // setPointerCapture; we don't need that for a one-shot throw, so
       // return false either way to keep DSN's outer flow inert.
       return false;
     }
-    return orig(event, ndc);
+    return orig.call(this, event, ndc);
   };
 }
 
@@ -85,16 +111,29 @@ async function tryRightClickThrow(event, ndc) {
   this.hoveredDie = null;
   this.findHoveredDie();
   const hit = this.hoveredDie;
-  if (!hit) return false;
+  if (!hit) {
+    rcDiag(`miss: no die under cursor (ndc.x=${ndc.x.toFixed(3)}, ndc.y=${ndc.y.toFixed(3)})`);
+    return false;
+  }
   const root = this.findRootObject(hit.object);
-  if (!root) return false;
-  if (!isThrowable(root)) return false;
+  if (!root) {
+    rcDiag(`miss: hovered something but findRootObject returned null`);
+    return false;
+  }
+  const reason = describeUnthrowable(root);
+  if (reason) {
+    rcDiag(`miss: ${reason}`, { id: root.userData?.persistentId, type: root.notation?.type });
+    return false;
+  }
 
   event.preventDefault?.();
   event.stopPropagation?.();
 
   const pdm = this.persistentDiceManager;
-  if (!pdm?.throwPersistentDice) return false;
+  if (!pdm?.throwPersistentDice) {
+    rcDiag(`miss: persistentDiceManager.throwPersistentDice unavailable`);
+    return false;
+  }
 
   // Selection-aware multi-throw: if the hovered die is part of an active
   // multi-selection, throw every selected die in one batch (matching DSN's
@@ -121,9 +160,10 @@ async function tryRightClickThrow(event, ndc) {
 
   try {
     await pdm.throwPersistentDice(dice, velocity);
-    log(`right-click-throw: thrown ${dice.length} die(s)`);
+    rcDiag(`thrown ${dice.length} die(s)`);
   } catch (e) {
     warn("right-click-throw: pdm.throwPersistentDice threw", e);
+    rcDiag(`error during pdm.throwPersistentDice`, e);
   }
   return true;
 }
