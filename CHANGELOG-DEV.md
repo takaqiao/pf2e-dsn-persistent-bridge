@@ -4,6 +4,14 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.2 — 2026-05-03
+
+### Fixes
+
+- **Threshold≤4 still didn't reliably trigger throws — the user releases the mouse before any move-time heuristic catches up.** v0.4.1's three trigger paths (`_activatePreRoll` suppress, `onMouseMove` shake-path, `onMouseMove` velocity-path) all fire DURING the drag. But the natural human throw gesture is a brief wind-up flick followed immediately by mouseup, so users were releasing before any path tripped. The user's framing: "人扔骰子不一定会拉着这个骰子到（触发）阶段再松手 不自然 很多人 蓄力一下就松开鼠标了". DSN's `onMouseUp` body confirms this is fatal — it captures `i = this.mouse.preRoll` early and computes a throw velocity ONLY when `i === true`: `const r = t.length>0 && i ? this._computeThrowVelocity(!0) : null`. Without preRoll set by mouseup time, the held dice get released without throwing. Added a fourth patch — `proto.onMouseUp` — that runs BEFORE the captured original. When `mouse.constraintDown && heldPersistentDice.length>0 && !preRoll && threshold<5`, compute total drag path from `dragPositions`. If `shakeCount>0`, `|spinAccum|>0.5`, or `totalPath >= max(2, threshold*2)`, fire `origActivate.call(this)`. DSN's own onMouseUp then sees `preRoll=true` and runs `_computeThrowVelocity(true)` — which falls back to a random-direction min-velocity throw if `dragPositions.length<3` or computes a directed throw from the last three samples. Either way the dice fly. The `minPath` floor of 2 is small enough to catch any deliberate wind-up but large enough that a stray 1-pixel jitter on a click-to-select doesn't accidentally throw.
+
+- **Lowered the move-time velocity bypass bar from `max(3, t*3)` to `max(2, t*2)`** so a fast mid-drag flick fires preRoll sooner. Threshold=4 now lands at 8 units (still well below DSN's own So=12 segment floor); threshold=1 lands at 2 units (effectively any motion). Mid-drag throws now feel snappier even before the mouseup catchall fires.
+
 ## 0.4.1 — 2026-05-03
 
 ### Fixes

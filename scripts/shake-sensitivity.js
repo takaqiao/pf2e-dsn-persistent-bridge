@@ -15,7 +15,7 @@ import { MOD_ID, SETTINGS, warn } from "./constants.js";
  * no direction reversal. So lowering the threshold alone has no effect on
  * straight-flick throws.
  *
- * Three prototype patches together make the threshold actually do what the
+ * Four prototype patches together make the threshold actually do what the
  * user expects:
  *
  *   1. `_activatePreRoll` wrap — for thresholds HIGHER than 5, suppress
@@ -27,8 +27,15 @@ import { MOD_ID, SETTINGS, warn } from "./constants.js";
  *
  *   3. `onMouseMove` velocity-path — for thresholds LOWER than 5, also
  *      fire on a fast unidirectional segment (read straight from
- *      `mouse.dragPositions`). This is the path that catches a clean
- *      throw flick — DSN's reversal heuristic never would.
+ *      `mouse.dragPositions`). Catches a clean throw flick mid-drag.
+ *
+ *   4. `onMouseUp` mouseup-catchall — natural human gesture is "wind up
+ *      briefly, then release"; users don't keep dragging until the move
+ *      heuristic trips. On release, if held dice had any non-trivial
+ *      motion during the hold, fire `_activatePreRoll` BEFORE DSN's
+ *      onMouseUp checks `mouse.preRoll`. DSN's own `_computeThrowVelocity`
+ *      then reads the recent `dragPositions` and produces a directed
+ *      throw (random fallback if too few samples).
  *
  * All patches go on `Object.getPrototypeOf(ih)` (i.e., `InputHandler.prototype`)
  * so DSN's box rebuilds (window resize, perf-preset changes) preserve them.
@@ -76,6 +83,7 @@ function patch(proto) {
 
   const origActivate = proto._activatePreRoll;
   const origMove = proto.onMouseMove;
+  const origMouseUp = proto.onMouseUp;
 
   proto._activatePreRoll = function () {
     const t = getThreshold();
@@ -111,21 +119,56 @@ function patch(proto) {
 
     // Velocity-path: catch a clean unidirectional flick. DSN's reversal
     // heuristic never fires on a straight throw — read the most recent
-    // segment distance from dragPositions instead. Distance threshold maps
-    // ~linearly with the slider so 1 = hair trigger, 4 ≈ DSN's own So=12
-    // segment-length floor.
+    // segment distance from dragPositions instead.
     const dp = this.mouse.dragPositions;
     if (dp?.length >= 2) {
       const a = dp[dp.length - 2];
       const b = dp[dp.length - 1];
       const dist = Math.hypot(b.x - a.x, b.z - a.z);
-      const minSegment = Math.max(3, t * 3);
+      const minSegment = Math.max(2, t * 2);
       if (dist >= minSegment) {
         DIAG(`force-trigger via velocity (threshold=${t}, segDist=${dist.toFixed(1)} ≥ ${minSegment})`);
         origActivate.call(this);
       }
     }
     return ret;
+  };
+
+  proto.onMouseUp = async function (event) {
+    const m = this.mouse;
+    // Mouseup-catchall: human reflex is to release after a brief wind-up,
+    // not to keep dragging until the move heuristic trips. If we still
+    // haven't fired preRoll but there's been throw-intent motion during
+    // the hold, fire it NOW so DSN's own onMouseUp sees `preRoll=true`
+    // and computes a throw velocity from dragPositions.
+    if (m && !m.preRoll && m.constraintDown && m.heldPersistentDice?.length > 0) {
+      const t = getThreshold();
+      if (t < DEFAULT_THRESHOLD) {
+        const sc = m.shakeCount ?? 0;
+        const sa = Math.abs(m.spinAccum ?? 0);
+        const dp = m.dragPositions;
+        let totalPath = 0;
+        if (dp?.length >= 2) {
+          for (let k = 1; k < dp.length; k++) {
+            totalPath += Math.hypot(dp[k].x - dp[k - 1].x, dp[k].z - dp[k - 1].z);
+          }
+        }
+        // Lower threshold = lower bar. minPath is in world units (DSN's
+        // own significant-segment floor is So=12). At t=1 we need any
+        // ~2-unit total path; at t=4 we need ~8 — still well below DSN's
+        // own bar but enough to distinguish a wind-up flick from a stray
+        // 1-pixel mouse jitter on a select-click.
+        const minPath = Math.max(2, t * 2);
+        const intent = sc > 0 || sa > 0.5 || totalPath >= minPath;
+        if (intent) {
+          DIAG(`force-trigger via mouseup (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)}, path=${totalPath.toFixed(1)})`);
+          origActivate.call(this);
+        } else {
+          DIAG(`mouseup: no throw intent (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)}, path=${totalPath.toFixed(1)} < ${minPath})`);
+        }
+      }
+    }
+    return origMouseUp.call(this, event);
   };
 
   DIAG("patches installed on InputHandler.prototype (default threshold=" + getThreshold() + ")");
