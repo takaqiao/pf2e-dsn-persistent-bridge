@@ -19,6 +19,7 @@ export const SETTINGS = {
   rightClickAutoThrow: "rightClickAutoThrow",
   mirrorThrowToHiddenViewers: "mirrorThrowToHiddenViewers",
   registerPf2eColorsets: "registerPf2eColorsets",
+  shakeThreshold: "shakeThreshold",
   verboseLogging: "verboseLogging",
 };
 

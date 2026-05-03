@@ -105,7 +105,23 @@
       "verboseLogging": {
         "name": "Verbose console logging",
         "hint": "Default off. Print detailed step-by-step traces to the browser console. Turn on if you're filing a bug report."
+      },
+      "shakeThreshold": {
+        "name": "Shake-to-throw threshold",
+        "hint": "How many shake-direction reversals (or rotational momentum) it takes to trigger a throw. Default 5 (Dice So Nice's built-in value). Lower = easier to trigger, higher = need to shake more vigorously. Adjustable from the slot tray's Shake button while a roll dialog is open."
       }
+    },
+    "shakeSensitivity": {
+      "label": "Shake",
+      "tooltip": "Adjust shake sensitivity for throwing dice",
+      "title": "Shake Sensitivity",
+      "threshold": "Threshold",
+      "dialogIntro": "How vigorously you need to shake a die to trigger a throw.",
+      "hint": "Lower = easier to trigger. Default is 5 (Dice So Nice's built-in value). Try 2-3 if shaking feels unresponsive.",
+      "save": "Save",
+      "reset": "Reset",
+      "cancel": "Cancel",
+      "saved": "Shake threshold set to {value}"
     }
   }
 }

@@ -21,6 +21,12 @@
                     <span class="dsn-access-label">{{accessLabel}}</span>
                 </button>
             {{/if}}
+            <button type="button" class="dsn-shake-btn"
+                    data-action="dsn-shake-sensitivity"
+                    data-tooltip="{{shakeTooltip}}">
+                <i class="fa-solid fa-arrows-spin"></i>
+                <span class="dsn-shake-label">{{shakeLabel}}</span>
+            </button>
             <button type="button" class="dsn-perf-btn perf-{{perfCurrent}}"
                     data-action="dsn-cycle-perf"
                     data-tooltip="{{perfTooltip}}">

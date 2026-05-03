@@ -166,4 +166,14 @@ export function registerSettings() {
     type: Boolean,
     default: true,
   });
+
+  game.settings.register(MOD_ID, SETTINGS.shakeThreshold, {
+    name: `${MOD_ID}.settings.shakeThreshold.name`,
+    hint: `${MOD_ID}.settings.shakeThreshold.hint`,
+    scope: "client",
+    config: true,
+    type: Number,
+    default: 5,
+    range: { min: 1, max: 10, step: 1 },
+  });
 }

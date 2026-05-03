@@ -13,6 +13,7 @@ import {
   sweepOrphanTaskDice,
 } from "./spawn-helper.js";
 import { getCurrentPreset, cyclePerfPreset } from "./perf-preset.js";
+import { openShakeSensitivityDialog } from "./shake-sensitivity.js";
 
 const TEMPLATE = `modules/${MOD_ID}/templates/slot-tray.hbs`;
 
@@ -188,6 +189,8 @@ async function renderTrayHTML(app, store) {
     perfCurrent,
     perfLabel: game.i18n.localize(`${MOD_ID}.tray.perf.${perfCurrent}`),
     perfTooltip: game.i18n.localize(`${MOD_ID}.tray.perfTooltip`),
+    shakeLabel: game.i18n.localize(`${MOD_ID}.shakeSensitivity.label`),
+    shakeTooltip: game.i18n.localize(`${MOD_ID}.shakeSensitivity.tooltip`),
     showAccessToggle: lockingEnabled && store.slots.length > 0,
     accessLocked: !isUnlocked,
     accessIcon: isUnlocked ? "fa-lock-open" : "fa-lock",
@@ -233,6 +236,19 @@ function bindTrayHandlers(root, store) {
     b.addEventListener("click", (ev) => {
       ev.preventDefault();
       selectAllTaskDice(store);
+    })
+  );
+
+  // Shake sensitivity: open a popup with a slider to adjust the shake-to-
+  // throw threshold (DSN's default is hardcoded at 5; we expose 1-10).
+  tray.querySelectorAll('[data-action="dsn-shake-sensitivity"]').forEach((b) =>
+    b.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      try {
+        await openShakeSensitivityDialog();
+      } catch (e) {
+        err("shake sensitivity dialog failed", e);
+      }
     })
   );
 

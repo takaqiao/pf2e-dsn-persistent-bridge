@@ -4,6 +4,20 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.0 — Adjustable shake sensitivity
+
+- Added: shake-to-throw is now adjustable. DSN ships with a fixed shake
+  threshold (you have to wiggle a die hard before it flies); some users
+  found that too stiff. There's now a slider 1–10, where lower = easier
+  to trigger.
+- **Where to find it:** the slot tray (the panel under a roll dialog) has
+  a new **Shake** button next to the perf preset. Click it → slider
+  popup → save. Takes effect immediately, no reload needed.
+- Default is **5** (DSN's built-in value, unchanged behavior). Try **2–3**
+  if shaking feels unresponsive.
+- The setting also lives in Settings → Module Settings if you prefer the
+  standard panel.
+
 ## 0.3.1 — Right-click reliability
 
 - Fixed: right-click to throw would silently stop working after a window
