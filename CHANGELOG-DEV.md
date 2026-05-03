@@ -4,6 +4,23 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.1 — 2026-05-03
+
+### Fixes
+
+- **Slider live-display didn't update under FVTT's CSP.** v0.4.0 used inline `oninput="this.closest(...).querySelector(...).textContent=this.value"`. Foundry's `Content-Security-Policy` strips inline event handlers, so the displayed number froze at the slider's initial value while the input itself worked. Switched to a `render` callback on `DialogV2.prompt`: after each render, locate `input[name="threshold"]` + `.dsn-bridge-shake-val`, attach a regular `input` event listener that mirrors `slider.value` into the strong tag's textContent. Idempotency guarded via a `slider._dsnBridgeWired` sentinel since render can fire more than once.
+
+- **Lowering the threshold did nothing for a clean throwing flick.** This is the bug the user reported as "调到 1 也没有太大区别 / 理论上来说扔出去就应该算作进入投掷". DSN's heuristic in `onMouseMove` looks at three consecutive `dragPositions` samples and increments `shakeCount` only when the dot product of consecutive segments < -0.5 (i.e., a >120° direction reversal). `spinAccum` accumulates the cross product. A single straight flick (no reversal, minimal rotation) makes both stay at zero forever — no slider value rescues it. Added a third path on the `onMouseMove` wrap: when `threshold < 5`, also read `mouse.dragPositions` directly and force-trigger when the most recent segment distance crosses `Math.max(3, threshold * 3)` world-space units. Mapping is calibrated so threshold=1 lands at 3 units (catches even gentle flicks; well below DSN's `So=12` segment-length floor) and threshold=4 lands at 12 units (matches DSN's own minimum-significant-segment, so threshold=4 is "as soft as DSN can natively detect"). At threshold=5, neither the shake nor velocity bypass fires — DSN's stock behavior is preserved exactly. The `_activatePreRoll` suppress path is now also gated on `t > DEFAULT_THRESHOLD` for clarity (was unconditionally `sc<t&&sa<t` which functionally degenerated to no-op for t<=5 but was confusing to read).
+
+### Diagnostics
+
+- All shake-related events now log unconditionally with the prefix `[PF2e×DSN shake]`:
+  - On install / deferred install / already-patched.
+  - On `_activatePreRoll` suppress (with shakeCount + spinAccum + threshold).
+  - On force-trigger via shake (sc/sa values).
+  - On force-trigger via velocity (segment distance + minSegment threshold).
+  - On threshold save (popup → confirms live application).
+
 ## 0.4.0 — 2026-05-03
 
 ### Features

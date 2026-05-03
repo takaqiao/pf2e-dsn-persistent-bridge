@@ -4,6 +4,23 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.1 — Shake sensitivity, made actually sensitive
+
+Three follow-ups on 0.4.0:
+
+- Fixed: dragging the slider in the popup didn't update the number on the
+  right (Foundry's CSP was dropping the inline handler). Live updates now.
+- Saving takes effect immediately. No reload required, ever.
+- Lowering the threshold now actually catches a clean throwing flick. The
+  earlier version only relaxed DSN's "shake" detector — but a clean throw
+  is unidirectional and DSN's detector specifically requires direction
+  reversals, so a flick never triggered no matter how low you set the
+  slider. We now also detect a fast unidirectional drag (read straight
+  from the held-die mouse path) when the slider is below 5. At 1–2 a
+  short flick triggers the throw; at 3–4 you need a deliberate flick.
+- Added unconditional `[PF2e×DSN shake]` console diagnostics — every
+  trigger or suppression logs why, useful for tuning the slider.
+
 ## 0.4.0 — Adjustable shake sensitivity
 
 - Added: shake-to-throw is now adjustable. DSN ships with a fixed shake
