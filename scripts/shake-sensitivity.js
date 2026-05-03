@@ -119,13 +119,14 @@ function patch(proto) {
 
     // Velocity-path: catch a clean unidirectional flick. DSN's reversal
     // heuristic never fires on a straight throw — read the most recent
-    // segment distance from dragPositions instead.
+    // segment distance from dragPositions instead. Linear scale so t=1
+    // fires on essentially any motion, t=4 ≈ DSN's own So=12 floor.
     const dp = this.mouse.dragPositions;
     if (dp?.length >= 2) {
       const a = dp[dp.length - 2];
       const b = dp[dp.length - 1];
       const dist = Math.hypot(b.x - a.x, b.z - a.z);
-      const minSegment = Math.max(2, t * 2);
+      const minSegment = Math.max(0.5, (t - 1) * 2);
       if (dist >= minSegment) {
         DIAG(`force-trigger via velocity (threshold=${t}, segDist=${dist.toFixed(1)} ≥ ${minSegment})`);
         origActivate.call(this);
@@ -137,10 +138,18 @@ function patch(proto) {
   proto.onMouseUp = async function (event) {
     const m = this.mouse;
     // Mouseup-catchall: human reflex is to release after a brief wind-up,
-    // not to keep dragging until the move heuristic trips. If we still
-    // haven't fired preRoll but there's been throw-intent motion during
-    // the hold, fire it NOW so DSN's own onMouseUp sees `preRoll=true`
-    // and computes a throw velocity from dragPositions.
+    // not to drag until the move heuristic trips. `dragPositions` is also
+    // throttled to 40ms samples — fast flicks routinely fall between two
+    // samples, leaving us with a `path` that doesn't reflect the actual
+    // gesture. So we lean on the threshold itself: at t=1 any drag-with-
+    // release fires preRoll. DSN's `_computeThrowVelocity(true)` then
+    // either uses whatever samples exist (>=3 → directed throw) or falls
+    // back to randomMinThrow (random direction, fixed min velocity) —
+    // both are vastly better than the silent drop.
+    //
+    // Pure click-without-drag goes through DSN's pendingGrab/selection
+    // path before reaching here (constraintDown stays false in that
+    // case), so this catchall only fires for genuine drags.
     if (m && !m.preRoll && m.constraintDown && m.heldPersistentDice?.length > 0) {
       const t = getThreshold();
       if (t < DEFAULT_THRESHOLD) {
@@ -153,20 +162,19 @@ function patch(proto) {
             totalPath += Math.hypot(dp[k].x - dp[k - 1].x, dp[k].z - dp[k - 1].z);
           }
         }
-        // Lower threshold = lower bar. minPath is in world units (DSN's
-        // own significant-segment floor is So=12). At t=1 we need any
-        // ~2-unit total path; at t=4 we need ~8 — still well below DSN's
-        // own bar but enough to distinguish a wind-up flick from a stray
-        // 1-pixel mouse jitter on a select-click.
-        const minPath = Math.max(2, t * 2);
-        const intent = sc > 0 || sa > 0.5 || totalPath >= minPath;
+        // Linear scale: t=1 → 0 (any drag fires), t=4 → 6 (deliberate
+        // motion required). `t=5` is unreachable here (gated above).
+        const minPath = (t - 1) * 2;
+        const intent = sc > 0 || sa > 0.1 || totalPath >= minPath;
         if (intent) {
-          DIAG(`force-trigger via mouseup (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)}, path=${totalPath.toFixed(1)})`);
+          DIAG(`force-trigger via mouseup (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)}, path=${totalPath.toFixed(1)} ≥ ${minPath})`);
           origActivate.call(this);
         } else {
           DIAG(`mouseup: no throw intent (threshold=${t}, sc=${sc}, |sa|=${sa.toFixed(2)}, path=${totalPath.toFixed(1)} < ${minPath})`);
         }
       }
+    } else if (m?.preRoll) {
+      DIAG("mouseup: preRoll already set (DSN will throw via its own path)");
     }
     return origMouseUp.call(this, event);
   };

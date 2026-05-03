@@ -4,6 +4,18 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.3 — Threshold 1 = "release-throws"
+
+- Fixed: at threshold=1 some flick attempts still didn't trigger because
+  DSN samples mouse motion every 40ms — a fast flick can happen entirely
+  between two samples, leaving the recorded path so small the catchall
+  ignored it. At threshold=1 the bar is now simply "any drag-with-
+  release throws", no minimum motion. DSN's own throw-velocity calc
+  takes the samples it has, or falls back to a random-direction min
+  velocity throw — anything's better than silently dropping the die.
+- Higher thresholds scale the bar linearly (2 = light motion, 3 = some
+  motion, 4 = deliberate motion). Threshold=5 still matches DSN exactly.
+
 ## 0.4.2 — Shake sensitivity feels natural now
 
 - Fixed: at low thresholds the throw still didn't always trigger, because
