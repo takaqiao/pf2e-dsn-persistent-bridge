@@ -36,92 +36,75 @@
     "settings": {
       "enabled": {
         "name": "Enable bridge",
-        "hint": "Master toggle for the PF2e × DSN persistent dice bridge."
+        "hint": "Master on/off switch for everything this module does. Turn off to disable without uninstalling."
       },
       "requireAllSlots": {
-        "name": "Require all slots filled",
-        "hint": "When enabled, the dialog falls back to pure RNG if any slot is empty at submit time. Default off — partial submission uses persistent dice for filled slots and RNG for the rest."
-      },
-      "consumeAnyOwner": {
-        "name": "Consume any player's dice",
-        "hint": "When enabled, your dialog can match persistent dice rolled by any user (cooperative play). Default off — only your own thrown dice fill your slots."
+        "name": "Require all dice thrown",
+        "hint": "Default off. When on, hitting Roll without throwing every die first uses pure system random for the whole roll instead of mixing thrown dice with random ones."
       },
       "autoSpawnDice": {
-        "name": "Auto-spawn task dice",
-        "hint": "Default on. When a PF2e check / damage dialog opens, automatically spawn the needed persistent dice (e.g. 1× d20, 3× d6) onto the canvas. They are cleaned up when the dialog closes. Disable to spawn dice manually."
+        "name": "Auto-spawn dice on dialog open",
+        "hint": "Default on. Opening a roll dialog automatically puts the dice you need on the canvas. Turn off if you'd rather use only your existing manually-placed dice."
       },
       "onlyConsumeOwned": {
-        "name": "Only consume module-spawned dice",
-        "hint": "Default on. Only persistent dice that the module spawned itself ('task dice') feed into roll dialog slots. Dice you spawn manually are free decoration and never get pulled into a roll. Disable to let any persistent die feed any open dialog."
+        "name": "Only use module-spawned dice",
+        "hint": "Default on. Only the dice this module places for a roll dialog can fill a slot. Other dice you manually drop on the canvas stay decorative."
       },
       "hideDecorativeDuringDialog": {
-        "name": "Hide decorative dice during dialog",
-        "hint": "Default on. While a check / damage dialog is open, your manually-spawned decorative dice are visually hidden from the canvas, leaving only the task dice you need to throw. They reappear when the dialog closes."
+        "name": "Hide decorative dice during a roll",
+        "hint": "Default on. While a roll dialog is open, your manually-placed dice are temporarily hidden so the canvas only shows the dice you need to throw. They reappear when the dialog closes."
       },
       "taskDiceLockedByDefault": {
-        "name": "Lock task dice to dialog opener by default",
-        "hint": "Default on. Each task die spawned for a roll dialog is locked to the player who opened the dialog — other players cannot drag, Ctrl+click, or throw it. Each dialog re-locks fresh; you can manually unlock for the current dialog via the 'Mine only' button at the top of the tray. Disable to keep task dice freely interactive for everyone."
+        "name": "Lock dice to roller",
+        "hint": "Default on. Other players can't drag or throw the dice for your roll. There's an unlock toggle on the slot tray if you want to share for the current dialog."
       },
       "autoSelectAllOnSpawn": {
         "name": "Auto-select all dice on spawn",
-        "hint": "Default off. When on, every task die spawned for a dialog is auto-selected (same as clicking 'Select all'). You can then throw them all in a single drag instead of Ctrl+clicking each individually. Especially useful for multi-die damage rolls."
+        "hint": "Default off. When on, every die spawned for a dialog is pre-selected so you can throw them all in a single drag instead of Ctrl+clicking each."
       },
       "respectSecretRolls": {
         "name": "Respect secret rolls",
-        "hint": "Default on. When a check / damage dialog uses GM Roll / Blind Roll / Self Roll, the module treats it as a secret roll: task dice are only spawned on the client that should see the result, and never broadcast across socket. Other players see no dice on their canvas, preserving the secrecy. Disable to treat every dialog as public (players will see GM's secret throw animation, leaking the result)."
+        "hint": "Default on. GM Roll / Blind Roll / Self Roll dialogs spawn dice only on the client that should see the result; everyone else sees ghost (\"?\") dice during the throw, preserving secrecy."
       },
       "suppressDsnThrowMessage": {
-        "name": "Suppress standalone DSN throw message",
-        "hint": "Default on. While a check / damage dialog is open, the standalone 'You rolled X' chat message DSN normally posts for a persistent throw is redundant — the user already saw the dice physically roll, and the PF2e check result message contains the value. With this on, that standalone message is suppressed; the PF2e check message is the only chat output. Standalone throws (no dialog open) are unaffected and keep their message."
+        "name": "Hide redundant throw chat message",
+        "hint": "Default on. While a dialog is open, the standalone \"You rolled X\" chat message that DSN normally posts for each throw is hidden — the actual roll result appears normally."
       },
       "settleBufferMs": {
         "name": "Settle buffer (ms)",
-        "hint": "Extra wait after `engine.rolling` flips false before we record the die value, to cover any visual lag between physics-done and render-done. Default 100ms. Range 0-1000ms."
-      },
-      "matchPriority": {
-        "name": "Slot match priority",
-        "hint": "How to choose which open dialog gets a freshly-thrown die when multiple match.",
-        "choices": {
-          "byType": "By die type only (first dialog wins)",
-          "byOwnerThenType": "Prefer dialog whose owner rolled the die",
-          "fifoStrict": "First-opened dialog wins"
-        }
+        "hint": "Extra wait before reading dice values, in case visuals lag behind physics. Default 100 ms. Most users don't need to change this."
       },
       "applyToReroll": {
         "name": "Apply to rerolls",
-        "hint": "Use unconsumed persistent dice on the canvas as input for hero-point / fortune rerolls. Throw the new die first, then click reroll."
+        "hint": "Default on. Hero point / fortune rerolls use any unthrown dice on the canvas. Throw a fresh die first, then click reroll."
       },
       "autoSubmitOnFill": {
-        "name": "Auto-submit when all slots filled",
-        "hint": "Default on. When every slot has a value from a thrown persistent die, the dialog auto-clicks the Roll button. Disable to keep manual control of submission timing (e.g. tweak modifiers after rolling)."
+        "name": "Auto-submit when all dice land",
+        "hint": "Default on. When every die has been thrown and settled, the dialog auto-clicks Roll. Turn off to stop and inspect modifiers before submitting."
       },
       "autoSubmitDelayMs": {
         "name": "Auto-submit delay (ms)",
-        "hint": "How long to wait after the last slot is filled before auto-submitting. Default 100ms. Range 0-1000ms; raise to 500-1000 if it feels too snappy."
-      },
-      "showLockButton": {
-        "name": "Show lock button",
-        "hint": "Default off. Adds a lock/unlock button to each slot. A locked slot is preserved when 'Clear All' is used and won't be overwritten by newly-thrown dice. Most users don't need this."
+        "hint": "How long to wait after dice settle before auto-submitting. Default 100 ms. Raise to 500–1000 if it feels too snappy."
       },
       "suppressRedundantDsn": {
-        "name": "Suppress redundant dice animation",
-        "hint": "Default on. Without this, PF2e re-asks DSN to show the same dice flying in again after submission, even though you already threw them physically on the canvas. Keep on to skip the duplicate animation."
-      },
-      "verboseLogging": {
-        "name": "Verbose console logging",
-        "hint": "Default off. Turn on to print per-step traces to the browser console (matched dice, settle timings, evaluate-wrapper injection, suppression-hook decisions). Useful for debugging or filing a bug report. Warnings and errors are always shown regardless of this setting."
+        "name": "Suppress duplicate dice animation",
+        "hint": "Default on. Without this, dice would animate twice — once when you throw them, once when the chat message posts. Keep on."
       },
       "rightClickAutoThrow": {
         "name": "Right-click to throw",
-        "hint": "Default on. Right-click any of your own persistent dice on the canvas to throw it in a random direction at minimum velocity — no shaking required. The browser context menu over the dice canvas is suppressed when you have a die under the cursor."
+        "hint": "Default on. Right-click any of your own dice on the canvas to fling it in a random direction — no shaking required."
       },
       "mirrorThrowToHiddenViewers": {
-        "name": "Mirror task throws to hidden viewers",
-        "hint": "Default on (world setting). When a player whose DSN visibility is 'Show only mine' or 'Hide all' would otherwise see nothing of another player's task-die throw, play a brief ephemeral 3D animation on their canvas with the predetermined result. Idle dice still don't appear — they only see the throw moment, then the dice vanish. Disable to keep hidden-viewer mode strict (no animation at all)."
+        "name": "Show throws to hidden-viewer players (world)",
+        "hint": "Default on. Players whose DSN visibility is \"Show only mine\" or \"Hide all\" see a brief throw animation when others roll, instead of nothing at all. Idle dice still don't appear for them."
       },
       "registerPf2eColorsets": {
-        "name": "Register PF2e damage-type colorsets in DSN",
-        "hint": "Default on. DSN ships built-in colorsets named after D&D damage types (lightning, thunder, radiant, necrotic…) — names that don't match what PF2e tags rolls with (electricity, sonic, vitality, void…). On first load this module registers the missing PF2e-named colorsets so they appear in DSN's Damage Type Configuration alongside the built-ins, and so per-flavor styling applies to your rolls (including spawned task dice). Skipped automatically when 'PF2e Dice Flavor Fix' is active. To customize: GM-only Module Settings → Dice So Nice → Damage Type Configuration."
+        "name": "Add PF2e damage colors to Dice So Nice",
+        "hint": "Default on. Adds 11 PF2e damage types (electricity, sonic, vitality, void, spirit, mental, bleed, slashing, piercing, bludgeoning, untyped) as configurable colorsets in DSN's Damage Type Configuration. Skipped automatically when \"PF2e Dice Flavor Fix\" is installed."
+      },
+      "verboseLogging": {
+        "name": "Verbose console logging",
+        "hint": "Default off. Print detailed step-by-step traces to the browser console. Turn on if you're filing a bug report."
       }
     }
   }
