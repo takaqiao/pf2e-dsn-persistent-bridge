@@ -4,6 +4,20 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.3 — 2026-05-03
+
+### Fixes
+
+- **The mouseup catchall's `minPath` bar (≥ 2 world units) was unreachable on fast flicks.** User logs at threshold=1 showed total path values of 0.1–1.1 world units — well under the 2-unit floor — even when the user had clearly performed a wind-up flick. Root cause: DSN samples `dragPositions` every 40ms (`r=40` in the body of `onMouseMove`); a quick wind-up flick can complete in 50–80ms, fitting only 1–2 samples both clustered near the pickup origin. The actual fast segment of the gesture happens BETWEEN two scheduled sample windows and never gets recorded. We can't fix DSN's sampling without forking it, so we lean on the threshold value itself. New `minPath = (t - 1) * 2` formula maps to: t=1 → 0 units (any drag-with-release fires), t=2 → 2, t=3 → 4, t=4 → 6. At threshold=5 the entire mouseup catchall is gated off, preserving stock DSN behavior. Combined `intent = sc > 0 || sa > 0.1 || totalPath >= minPath`. The `sa > 0.5` floor in 0.4.2 was also too high — flicks with measurable rotation but small dot-product reversal generated `|sa| ≈ 0.13–0.18`, dropping below the bar; lowered to `0.1`.
+
+- **Lowered the velocity-path bar in onMouseMove from `max(2, t*2)` to `max(0.5, (t-1)*2)`** for symmetry with the mouseup logic. At t=1 a single sample with dist ≥ 0.5 fires — basically any visible movement. At t=4 it lands at 6, still well below DSN's `So=12` segment-significance floor.
+
+- **Why falling back to random-direction throws is acceptable.** When `_activatePreRoll` fires on a gesture with too few `dragPositions` samples (< 3), DSN's `_computeThrowVelocity(true)` returns `randomMinThrow()` — a fixed-magnitude vector in a uniformly random horizontal direction. The dice still throw, just in an arbitrary direction. The user's stated goal is "扔出去就可以直接算做（进入投掷）" — they care that the throw HAPPENS, not that direction is preserved from a too-fast-to-sample flick. Direction-preserving throws still happen automatically when sampling catches up (sustained-drag gestures with ≥ 3 samples).
+
+### Diagnostics
+
+- Added `mouseup: preRoll already set (DSN will throw via its own path)` log so we can distinguish mid-drag-trigger gestures from mouseup-catchall gestures in user-pasted log dumps.
+
 ## 0.4.2 — 2026-05-03
 
 ### Fixes
