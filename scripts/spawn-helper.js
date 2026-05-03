@@ -6,6 +6,7 @@ import {
   emitLockEvent,
   emitSecretMirror,
   emitSecretMirrorCleanup,
+  emitTaskFlavorSync,
 } from "./socket.js";
 
 /**
@@ -373,6 +374,17 @@ export async function spawnTaskDiceForStore(store) {
           persistentId: mesh.userData.persistentId,
           openerUserId: game.user.id,
           flavor: slot.flavor ?? null,
+        });
+      } else if (synchronize && slot.flavor) {
+        // Public-PC roll path: DSN's own broadcast handles spawning the
+        // mesh on every receiver, but the broadcast carries only the
+        // opener's RAW user appearance — receivers' meshes end up with
+        // the opener's default colorset, not the per-damage-type one.
+        // Send a follow-up flavor message so each receiver can swap the
+        // material to their own flavored appearance for this damage type.
+        emitTaskFlavorSync({
+          persistentId: mesh.userData.persistentId,
+          flavor: slot.flavor,
         });
       }
       // (No persistence stripping needed — spawnPersistentDieEphemeral
