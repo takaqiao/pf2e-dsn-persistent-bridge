@@ -1,5 +1,15 @@
 # PF2e × DSN Persistent Dice Bridge
 
+[![GitHub release](https://img.shields.io/github/v/release/takaqiao/pf2e-dsn-persistent-bridge?style=flat-square&label=release&logo=github)](https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest)
+[![Foundry version](https://img.shields.io/endpoint?url=https%3A%2F%2Ffoundryshields.com%2Fversion%3Furl%3Dhttps%3A%2F%2Fgithub.com%2Ftakaqiao%2Fpf2e-dsn-persistent-bridge%2Freleases%2Flatest%2Fdownload%2Fmodule.json&style=flat-square)](https://foundryvtt.com/packages/pf2e-dsn-persistent-bridge)
+[![Total downloads](https://img.shields.io/github/downloads/takaqiao/pf2e-dsn-persistent-bridge/total?style=flat-square&label=downloads&color=brightgreen)](https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases)
+[![Latest downloads](https://img.shields.io/github/downloads/takaqiao/pf2e-dsn-persistent-bridge/latest/total?style=flat-square&label=latest)](https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest)
+[![Foundry VTT](https://img.shields.io/badge/Foundry%20VTT-v13%20%7C%20v14-orange?style=flat-square&logo=foundryvirtualtabletop&logoColor=white)](https://foundryvtt.com/)
+[![Pathfinder 2e](https://img.shields.io/badge/system-PF2e-c1272d?style=flat-square)](https://foundryvtt.com/packages/pf2e)
+[![Dice So Nice](https://img.shields.io/badge/Dice%20So%20Nice-required-7b3f99?style=flat-square)](https://foundryvtt.com/packages/dice-so-nice)
+[![libWrapper](https://img.shields.io/badge/libWrapper-required-7b3f99?style=flat-square)](https://github.com/ruipin/fvtt-lib-wrapper)
+[![License: MIT](https://img.shields.io/github/license/takaqiao/pf2e-dsn-persistent-bridge?style=flat-square)](LICENSE)
+
 A Foundry VTT module that lets you use **Dice So Nice persistent dice you physically throw on the canvas** as the input for **PF2e** roll dialogs (skill checks, attack rolls, damage rolls, rerolls).
 
 When you open a PF2e roll dialog the module spawns the exact dice you need on the canvas; you drag and throw them; the result feeds the dialog's slots; the roll auto-submits. The PF2e check / damage chat message is the only message you see — the dice are physical, not RNG.
