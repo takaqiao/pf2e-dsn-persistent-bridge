@@ -4,6 +4,17 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.4 — Quiet console by default
+
+- All module diagnostics (shake detection, right-click throws, cross-
+  client mirror sync, flavor sync, visibility decisions) now respect the
+  "Verbose console logging" setting. Previously several of these printed
+  unconditionally — handy when actively debugging, noisy at the table.
+  Off by default; flip the setting on if you're filing a bug report or
+  want to see exactly why a roll behaved the way it did.
+- The `api.diagnose*()` console helpers still print regardless — those
+  are explicitly invoked from the F12 console and should always speak.
+
 ## 0.4.3 — Threshold 1 = "release-throws"
 
 - Fixed: at threshold=1 some flick attempts still didn't trigger because

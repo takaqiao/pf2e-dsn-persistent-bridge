@@ -1,4 +1,4 @@
-import { SETTINGS, getSetting, log, warn } from "./constants.js";
+import { SETTINGS, getSetting, log, tagged, warn } from "./constants.js";
 
 /**
  * Right-click on an owned persistent die → throw it in a random direction
@@ -23,7 +23,7 @@ const MIN_THROW_VELOCITY = 1200 * LEGACY_TO_METERS;
 const THROW_LOFT_Y = 2333 * LEGACY_TO_METERS;
 
 const RC_TAG = "[PF2e×DSN right-click]";
-const rcDiag = (...a) => console.log(RC_TAG, ...a);
+const rcDiag = tagged(RC_TAG);
 
 function describeUnthrowable(d) {
   if (!d?.userData) return "no userData";

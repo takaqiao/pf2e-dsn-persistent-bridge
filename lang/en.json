@@ -104,7 +104,7 @@
       },
       "verboseLogging": {
         "name": "Verbose console logging",
-        "hint": "Default off. Print detailed step-by-step traces to the browser console. Turn on if you're filing a bug report."
+        "hint": "Default off. Turn on to print all module diagnostics to the browser console (visibility decisions, shake detection, right-click throws, cross-client mirror sync, flavor sync, etc.). Off keeps the console quiet — flip on when you're filing a bug report or need to understand why something rolled the way it did."
       },
       "shakeThreshold": {
         "name": "Shake-to-throw threshold",
