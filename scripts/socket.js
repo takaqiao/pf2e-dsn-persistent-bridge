@@ -1,4 +1,4 @@
-import { MOD_ID, log, warn } from "./constants.js";
+import { MOD_ID, log, tagged, warn } from "./constants.js";
 import { applyMirrorThrow } from "./ephemeral-mirror.js";
 
 /**
@@ -256,7 +256,7 @@ function applyMirrorCleanup({ persistentIds }) {
 const pendingFlavorSync = new Map(); // persistentId -> { flavor, ts }
 const FLAVOR_SYNC_TTL_MS = 30000;
 const FLAVOR_TAG = "[PF2e×DSN flavor-sync]";
-const flavorDiag = (...a) => console.log(FLAVOR_TAG, ...a);
+const flavorDiag = tagged(FLAVOR_TAG);
 
 export function emitTaskFlavorSync({ persistentId, flavor }) {
   if (!persistentId || !flavor) return;

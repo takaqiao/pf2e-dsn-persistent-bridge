@@ -4,6 +4,18 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.4 — 2026-05-04
+
+### Refactor
+
+- **Centralized log gating via `tagged(prefix)`.** Five subsystems each had their own ad-hoc `console.log` wrapper that printed unconditionally: `shake-sensitivity.DIAG`, `right-click-throw.rcDiag`, `ephemeral-mirror.diag`, `socket.flavorDiag`, and the per-spawn visibility line in `spawn-helper.js`. Each was originally added with a "users can paste this in a bug report without flipping a setting" justification — but in aggregate they made the console noisy at the table for routine play. Added `tagged(prefix)` helper to `constants.js` that wraps `console.log(prefix, ...args)` with the same `verboseLogging` gate `log()` already uses. Migrated all five sites to use it, sharing a single check (`verboseOn()` factored from the original log()). Net effect: with verboseLogging off (default), the module prints ZERO routine logs — only `warn` / `err` for genuine problems. Flipping the setting on restores every diagnostic line, each still tagged with its original prefix so existing grep patterns in user bug reports keep working.
+
+- **Kept unconditional:** the `game.modules.get(MOD_ID).api.diagnose() / diagnoseTaskDice() / diagnoseDialog() / diagnoseFlavor()` console helpers in `main.js`. Those are user-invoked from F12 — they MUST print regardless of any setting. Also kept `slot-store.notify`'s `console.error` since errors should always surface.
+
+### i18n
+
+- Updated `settings.verboseLogging.hint` (en + zh-CN) to spell out which subsystems' diagnostics the toggle actually gates, so users have a hint of what to expect when they flip it.
+
 ## 0.4.3 — 2026-05-03
 
 ### Fixes

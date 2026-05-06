@@ -1,4 +1,4 @@
-import { MOD_ID, log, warn } from "./constants.js";
+import { MOD_ID, log, tagged, warn } from "./constants.js";
 import { SlotRegistry } from "./slot-store.js";
 import { inferShowBreakdownFromDialog } from "./show-breakdown.js";
 
@@ -35,13 +35,14 @@ import { inferShowBreakdownFromDialog } from "./show-breakdown.js";
  *                                       values to all-mode receivers)
  *   otherwise                         → skip (DSN normal flow shows it)
  *
- * Diagnostic logs are unconditional console.log so the cross-client
- * flow can be debugged without per-client setting toggles.
+ * Diagnostic logs are gated by the verboseLogging setting (see constants.js).
+ * Flip it on and grep the console paste for `[PF2e×DSN mirror]` when
+ * debugging the cross-client flow.
  */
 
 const SOCKET_NAME = `module.${MOD_ID}`;
 const TAG = "[PF2e×DSN mirror]";
-const diag = (...a) => console.log(TAG, ...a);
+const diag = tagged(TAG);
 
 /**
  * PF2e tags damage rolls with a compound flavor like `[fire]` for pure damage

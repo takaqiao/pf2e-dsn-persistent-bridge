@@ -1,4 +1,4 @@
-import { MOD_ID, SETTINGS, warn } from "./constants.js";
+import { MOD_ID, SETTINGS, tagged, warn } from "./constants.js";
 
 /**
  * Override DSN's shake-to-throw threshold.
@@ -46,9 +46,11 @@ const DEFAULT_THRESHOLD = 5;
 const MIN = 1;
 const MAX = 10;
 
-// Unconditional diagnostic — same shape as the right-click logs. Always on so
-// users can paste the lines back in a bug report without flipping a setting.
-const DIAG = (...args) => console.log("[PF2e×DSN shake]", ...args);
+// Diagnostic logger — gated by the verboseLogging setting (see constants.js).
+// Every shake-related event uses this prefix so users filing a bug report
+// can grep their console paste for `[PF2e×DSN shake]` after flipping the
+// verbose setting on.
+const DIAG = tagged("[PF2e×DSN shake]");
 
 let installed = false;
 
