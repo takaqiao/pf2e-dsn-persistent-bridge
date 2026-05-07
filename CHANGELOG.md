@@ -4,6 +4,21 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.5 — GM-only decorative persistent dice
+
+- New world setting **"Block players from creating decorative persistent
+  dice"** (default on). Players can no longer spawn their own persistent
+  dice via DSN's toolbox or console — only the bridge module's task
+  dice are allowed to appear. The GM is unrestricted and can still
+  spawn freely.
+- When a player tries to spawn a die under this setting, they get a
+  toast notification and the die isn't created. A console line
+  (`[PF2e×DSN restrict-spawn] blocked spawn (...)`) records the attempt
+  for the GM to inspect.
+- This only stops NEW spawns. Existing decorative dice from before the
+  setting was turned on are still on the canvas — clear them via DSN's
+  own toolbox "Clear all" once.
+
 ## 0.4.4 — Quiet console by default
 
 - All module diagnostics (shake detection, right-click throws, cross-

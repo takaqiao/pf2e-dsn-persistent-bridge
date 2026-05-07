@@ -163,6 +163,9 @@ async function applyMirror(payload) {
     const spawnOpts = {
       ownerUserId: payload.openerUserId,
       remotePersistentId: payload.persistentId,
+      // Bypass the restrictPlayerPersistentDice gate — secret-mirror spawns
+      // are bridge-driven, not user-initiated.
+      _dsnBridgeAllowed: true,
     };
     const wantGhost = visibility === "ghost";
     if (wantGhost || payload.flavor) {
@@ -380,6 +383,9 @@ async function applyFlavoredAppearance(mesh, flavor) {
       linkGroupSecondary,
       digitPlace,
       appearance,
+      // Bypass the restrictPlayerPersistentDice gate — flavor-sync re-spawn
+      // recreates a bridge-owned task die, not a user-initiated decorative.
+      _dsnBridgeAllowed: true,
     }, false); // synchronize=false: local-only re-spawn
 
     // Tag the new mesh so we don't reapply on re-flush of stale pending.
