@@ -176,4 +176,13 @@ export function registerSettings() {
     default: 5,
     range: { min: 1, max: 10, step: 1 },
   });
+
+  game.settings.register(MOD_ID, SETTINGS.restrictPlayerPersistentDice, {
+    name: `${MOD_ID}.settings.restrictPlayerPersistentDice.name`,
+    hint: `${MOD_ID}.settings.restrictPlayerPersistentDice.hint`,
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
 }

@@ -20,6 +20,7 @@ export const SETTINGS = {
   mirrorThrowToHiddenViewers: "mirrorThrowToHiddenViewers",
   registerPf2eColorsets: "registerPf2eColorsets",
   shakeThreshold: "shakeThreshold",
+  restrictPlayerPersistentDice: "restrictPlayerPersistentDice",
   verboseLogging: "verboseLogging",
 };
 

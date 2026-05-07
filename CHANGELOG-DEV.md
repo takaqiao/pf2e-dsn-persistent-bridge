@@ -4,6 +4,27 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.5 — 2026-05-04
+
+### Features
+
+- **`restrictPlayerPersistentDice` setting (world, default on; new file `scripts/restrict-persistent-spawn.js`).** DSN's `Dice3D.spawnPersistentDie` is open to anyone the world's `allowInteractivity` lets through; the toolbox UI's `_spawn` method has no GM gate (only `_clearAll` does). Players who discover the toolbox can place decorative dice that DSN persists across sessions, accumulating clutter the GM has no easy way to police. The user wanted a single switch for "only the bridge's task dice are allowed". Implementation: prototype-patch `Object.getPrototypeOf(game.dice3d).spawnPersistentDie` (Dice3D's prototype, not the per-instance method — Dice3D itself is constructed once and not rebuilt, but using prototype is the consistent pattern with our other patches). Wrap allows the call when EITHER (a) the setting is off, OR (b) the calling user is the GM, OR (c) the `opts._dsnBridgeAllowed === true` marker is present. Anything else — DSN's `_spawn(t)` toolbox method, console calls, third-party module calls — gets rejected with `null` return + localized `ui.notifications.warn` toast + always-on console.warn (player needs to find the refusal in console even with verbose logging off, since they'll wonder "why didn't my die spawn?"). Sentinel `proto._dsnBridgeRestrictPatched`. Install deferred to `diceSoNiceReady` if `game.dice3d` isn't ready at our `ready` time.
+
+- **Marked our three legitimate spawn paths** with `_dsnBridgeAllowed: true` on the opts:
+  - `spawn-helper.spawnPersistentDieEphemeral` — task-die opener spawn (and broadcast). Spreads the original opts and tacks the marker on so we don't lose any existing fields.
+  - `socket.applyMirror` — receiver-side secret-mirror spawn (`spawnOpts` literal).
+  - `socket.applyTaskFlavorSync` (the remove+respawn path for receiver-side flavor swap).
+  Right-click throw and shake-sensitivity don't spawn; reroll-handler only removes. No other call sites exist.
+
+### Why default on
+
+The setting defaults TRUE because the typical PF2e GM configuring this module wants determinism: "the dice on the canvas are roll dice, period." A table that wants decorative dice can flip it off — but they're the minority. We bias toward the GM's likely intent with a single quick toggle for the rest.
+
+### Caveats
+
+- Only blocks NEW spawns. DSN's own `_persistentDiceData` is restored on every login, so dice from before the setting was on still come back. Cleared via DSN's toolbox `Clear all` once. We deliberately don't auto-cleanup pre-existing decorative dice — the GM may have placed dice they want kept (mood lighting, tray dice, etc.), and we don't have a clean signal to tell those apart from player decorative.
+- `Dice3D` is module-level singleton, so prototype-patching once at ready is enough — no need for the box-rebuild survival logic the InputHandler patches use.
+
 ## 0.4.4 — 2026-05-04
 
 ### Refactor

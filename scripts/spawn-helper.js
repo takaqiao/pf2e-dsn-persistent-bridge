@@ -122,7 +122,10 @@ async function spawnPersistentDieEphemeral(dice3d, dieType, position, opts, sync
   dice3d._restoringDice = true;
   let mesh;
   try {
-    mesh = await dice3d.spawnPersistentDie(dieType, position, opts, synchronize);
+    // `_dsnBridgeAllowed` opts our task-die spawn past the
+    // restrictPlayerPersistentDice gate (see restrict-persistent-spawn.js).
+    const bridgeOpts = { ...opts, _dsnBridgeAllowed: true };
+    mesh = await dice3d.spawnPersistentDie(dieType, position, bridgeOpts, synchronize);
     // While _restoringDice was true, _savePersistentDiceToFlags returned
     // early — but DSN still added an entry to _persistentDiceData. Remove
     // it so any future save (triggered by an unrelated decorative spawn)

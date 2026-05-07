@@ -109,7 +109,14 @@
       "shakeThreshold": {
         "name": "震动触发阈值",
         "hint": "需要多少次方向反转或旋转动量积累才触发投掷。默认 5(Dice So Nice 内置值)。数值越低越容易触发,越高需要晃得越用力。打开掷骰对话框时,可以从骰子盘上的「灵敏度」按钮快速调整。"
+      },
+      "restrictPlayerPersistentDice": {
+        "name": "禁止玩家手动生成装饰用的 persistent dice(世界)",
+        "hint": "默认开启。阻止玩家通过 DSN 工具盒或 console 自己往画布上放装饰用的 persistent dice(比如随手摆一颗 d20 把玩)。只允许 bridge 模块为掷骰生成的任务骰出现。GM 不受限制。开启之前已经存在的装饰骰不会被自动清除 —— 让 GM 用 DSN 工具盒的「Clear all」一次清掉。"
       }
+    },
+    "restrictSpawn": {
+      "blocked": "GM 已限制 persistent dice —— 只允许 bridge 为掷骰生成的任务骰。"
     },
     "shakeSensitivity": {
       "label": "灵敏度",
