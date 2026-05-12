@@ -18,7 +18,12 @@ const FLAG_KEY = "welcomeShownVersion";
 const WELCOME_VERSION = "0.2.5";
 
 export async function maybeShowWelcome() {
-  if (!game.user) return;
+  // Capture identity once up front — between the initial check and the
+  // post-await setFlag call below, game.user could be nulled by a
+  // transient disconnect race. Capturing the id locally also lets us
+  // skip the redundant `game.user.id` accesses in the message body.
+  const userId = game.user?.id;
+  if (!userId) return;
   let shown;
   try {
     shown = game.user.getFlag(MOD_ID, FLAG_KEY);
@@ -33,12 +38,14 @@ export async function maybeShowWelcome() {
 
   try {
     await ChatMessage.create({
-      user: game.user.id,
+      user: userId,
       speaker: { alias: "PF2e × DSN Bridge" },
       content,
-      whisper: [game.user.id],
+      whisper: [userId],
     });
-    await game.user.setFlag(MOD_ID, FLAG_KEY, WELCOME_VERSION);
+    // Re-check game.user after the await — if user disconnected during
+    // chat message creation, setFlag will fail. Defensive only.
+    if (game.user) await game.user.setFlag(MOD_ID, FLAG_KEY, WELCOME_VERSION);
     log(`welcome message sent (version ${WELCOME_VERSION})`);
   } catch (e) {
     warn("welcome: send failed", e);

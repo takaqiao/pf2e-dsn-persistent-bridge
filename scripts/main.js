@@ -164,15 +164,29 @@ Hooks.once("ready", () => {
       diagnoseTaskDice() {
         const list = game.dice3d?.box?.persistentDiceList ?? [];
         const taskDice = list.filter((m) => m?.userData?.dsnPF2eBridge_owned === true);
-        const report = taskDice.map((m) => ({
-          dieType: m.notation?.compositeType ?? m.notation?.type,
-          persistentId: m.userData?.persistentId,
-          flavorTag: m.userData?.dsnPF2eBridge_flavor ?? null,
-          ownerUserId: m.userData?.ownerUserId,
-          materialColor: m.material?.color?.getHexString?.(),
-          materialName: m.material?.name,
-          materialUuid: m.material?.uuid,
-        }));
+        const myId = game.user?.id ?? null;
+        const report = taskDice.map((m) => {
+          const openerId = m.userData?.dsnPF2eBridge_openerUserId ?? null;
+          return {
+            dieType: m.notation?.compositeType ?? m.notation?.type,
+            persistentId: m.userData?.persistentId,
+            flavorTag: m.userData?.dsnPF2eBridge_flavor ?? null,
+            // DSN's own ownerUserId (the user who originally spawned the
+            // mesh) — present on every persistent die.
+            ownerUserId: m.userData?.ownerUserId,
+            // Bridge identification tags — added in 0.4.6 (mirror) +
+            // 0.4.7 (task-mark) + 0.4.8 (local opener). Sweep uses
+            // these to decide whether to keep / remove this mesh.
+            bridgeDialogId: m.userData?.dsnPF2eBridge_dialogId ?? null,
+            bridgeOpenerUserId: openerId,
+            bridgeOpenerLocal: openerId === myId,
+            bridgeOpenerOnline: openerId ? !!game.users?.get(openerId)?.active : null,
+            bridgeSecretMirror: m.userData?.dsnPF2eBridge_secretMirror === true,
+            materialColor: m.material?.color?.getHexString?.(),
+            materialName: m.material?.name,
+            materialUuid: m.material?.uuid,
+          };
+        });
         console.log(`[pf2e-dsn-persistent-bridge] ${taskDice.length} task die(s) on canvas:`, report);
         return report;
       },

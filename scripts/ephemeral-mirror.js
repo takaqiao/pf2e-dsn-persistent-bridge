@@ -222,6 +222,15 @@ function emitMirror(mirrors, source) {
 
 export function applyMirrorThrow(payload) {
   diag("receive: socket message arrived", payload);
+  // Defensive payload validation — sockets carry whatever a peer sent.
+  if (!payload || typeof payload !== "object") return;
+  if (payload.ownerUserId != null && typeof payload.ownerUserId !== "string") return;
+  if (!Array.isArray(payload.mirrors)) return;
+  // Cap mirror array length — same reasoning as MIRROR_CLEANUP_MAX_IDS.
+  if (payload.mirrors.length > 100) {
+    warn(TAG, `oversized mirrors array (${payload.mirrors.length}), capping at 100`);
+    payload = { ...payload, mirrors: payload.mirrors.slice(0, 100) };
+  }
   if (payload?.ownerUserId === game.user?.id) {
     diag("receive: skipped (own emit echoed back)");
     return;

@@ -77,6 +77,9 @@ export function emitLockEvent(persistentId, lockedBy) {
 }
 
 function applyLock(persistentId, lockedBy) {
+  // Defensive payload validation — sockets carry whatever a peer sent.
+  if (typeof persistentId !== "string" || !persistentId) return;
+  if (lockedBy != null && typeof lockedBy !== "string") return;
   const list = game.dice3d?.box?.persistentDiceList;
   const mesh = Array.isArray(list)
     ? list.find((m) => m?.userData?.persistentId === persistentId)
@@ -182,6 +185,11 @@ const recentlyCleanedUpMirrors = new Map();
 const MIRROR_CLEANUP_REMEMBER_MS = 5000;
 
 async function applyMirror(payload) {
+  // Required fields — fail soft on malformed payloads from misbehaving peers.
+  if (!payload || typeof payload !== "object") return;
+  if (typeof payload.persistentId !== "string" || !payload.persistentId) return;
+  if (typeof payload.dieType !== "string" || !payload.dieType) return;
+  if (typeof payload.openerUserId !== "string" || !payload.openerUserId) return;
   const visibility = decideViewerVisibility(payload);
   if (visibility === "skip") return;
 
@@ -263,11 +271,24 @@ async function applyMirror(payload) {
   }
 }
 
+// Cap the persistentIds array length defensively — a malicious or buggy
+// peer could send an absurd payload and we'd loop O(N) over it. 100 is
+// well above any realistic dialog (PF2e damage rolls top out around
+// 50 dice with extreme stacked spell modifiers).
+const MIRROR_CLEANUP_MAX_IDS = 100;
+
 function applyMirrorCleanup({ persistentIds }) {
   const dice3d = game.dice3d;
   if (!dice3d) return;
-  for (const id of (persistentIds || [])) {
-    if (!id) continue;
+  if (!Array.isArray(persistentIds)) return;
+  const ids = persistentIds.length > MIRROR_CLEANUP_MAX_IDS
+    ? persistentIds.slice(0, MIRROR_CLEANUP_MAX_IDS)
+    : persistentIds;
+  if (ids.length !== persistentIds.length) {
+    warn(`applyMirrorCleanup: capped oversized payload (${persistentIds.length} → ${ids.length} ids)`);
+  }
+  for (const id of ids) {
+    if (typeof id !== "string" || !id) continue;
     // Mark BEFORE we attempt removal: applyMirror's spawn-completion path
     // checks this map, so a tardy cleanup that arrived mid-spawn still
     // gets honored when the spawn finally lands. TTL pruned by the
@@ -317,7 +338,8 @@ export function emitTaskFlavorSync({ persistentId, flavor }) {
 
 async function applyTaskFlavorSync(payload) {
   const { persistentId, flavor } = payload || {};
-  if (!persistentId || !flavor) return;
+  if (typeof persistentId !== "string" || !persistentId) return;
+  if (typeof flavor !== "string" || !flavor) return;
   flavorDiag(`receive: ${persistentId} → ${flavor}`);
   // Receiver opted out of flavor coloring — respect their setting.
   if (game.dice3d?.userConfig?.enableFlavorColorset === false) {

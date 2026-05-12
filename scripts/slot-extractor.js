@@ -192,6 +192,12 @@ function slotsFromButtonText(dialog) {
       const n = parseInt(m[1], 10);
       const f = parseInt(m[2], 10);
       if (!Number.isFinite(n) || !Number.isFinite(f)) continue;
+      // Sanity bounds — PF2e button text shouldn't contain absurd numbers,
+      // but if it does (malformed compendium entry, unknown homebrew), the
+      // raw value could spawn thousands of dice. Skip anything outside
+      // plausible PF2e dice notation: n in [1, 50] (largest typical
+      // damage roll under any spell mods), f in [2, 100] (d100 max).
+      if (n < 1 || n > 50 || f < 2 || f > 100) continue;
       for (let i = 0; i < n; i++) slots.push({ faces: f, key: key++ });
     }
     return slots;

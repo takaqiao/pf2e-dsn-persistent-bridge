@@ -4,6 +4,29 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.9 — Third-pass audit polish
+
+Third multi-agent re-audit confirmed the 0.4.6–0.4.8 fixes hold up. A
+handful of minor robustness improvements:
+
+- **Slot extractor** rejects nonsense die notation like "999d999" from
+  malformed button text — bounded to plausible PF2e ranges (n in 1–50,
+  faces in 2–100).
+- **Socket payloads** now defensively type-check required fields
+  before processing (persistentId, dieType, openerUserId).
+  Misbehaving peers can't crash handlers with malformed data.
+- **Mirror-cleanup array** capped at 100 ids per payload — defensive
+  against pathological broadcasts.
+- **Diagnostic API** (`game.modules.get(...).api.diagnoseTaskDice()`)
+  now reports the new bridge tags (dialogId / openerUserId /
+  secretMirror / opener online status) so users can debug sweep
+  decisions from the console.
+- **Welcome message** captures user id locally to avoid a brief race
+  if the user disconnects between the initial check and the chat
+  message creation.
+
+No new features; no behavior changes for normal play.
+
 ## 0.4.8 — Second-pass audit fixes
 
 A second round of multi-agent code review caught a handful of edge cases
