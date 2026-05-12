@@ -94,10 +94,6 @@
         "name": "Right-click to throw",
         "hint": "Default on. Right-click any of your own dice on the canvas to fling it in a random direction — no shaking required."
       },
-      "mirrorThrowToHiddenViewers": {
-        "name": "Show throws to hidden-viewer players (world)",
-        "hint": "Default on. Players whose DSN visibility is \"Show only mine\" or \"Hide all\" see a brief throw animation when others roll, instead of nothing at all. Idle dice still don't appear for them."
-      },
       "registerPf2eColorsets": {
         "name": "Add PF2e damage colors to Dice So Nice",
         "hint": "Default on. Adds 11 PF2e damage types (electricity, sonic, vitality, void, spirit, mental, bleed, slashing, piercing, bludgeoning, untyped) as configurable colorsets in DSN's Damage Type Configuration. Skipped automatically when \"PF2e Dice Flavor Fix\" is installed."

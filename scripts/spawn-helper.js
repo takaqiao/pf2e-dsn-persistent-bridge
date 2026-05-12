@@ -9,6 +9,7 @@ import {
   emitSecretMirror,
   emitSecretMirrorCleanup,
   emitTaskFlavorSync,
+  emitTaskMarkSync,
 } from "./socket.js";
 
 /**
@@ -407,6 +408,21 @@ export async function spawnTaskDiceForStore(store) {
           flavor: slot.flavor,
         });
       }
+      // Public broadcast spawns: DSN's sync doesn't carry our `userData`
+      // tags. Without separate marker plumbing, receivers' broadcast-
+      // spawned task dice are indistinguishable from regular dice — the
+      // orphan sweep (`dsnPF2eBridge_owned !== true`) skips them. If the
+      // opener disconnects before broadcasting cleanup, foreign task
+      // dice persist forever. Emit a `task-mark` socket so receivers
+      // can tag their local mesh; sweep then handles them via the
+      // opener-online check (same as secret-mirrors).
+      if (synchronize) {
+        emitTaskMarkSync({
+          persistentId: mesh.userData.persistentId,
+          dialogId: store.dialogId,
+          openerUserId: game.user.id,
+        });
+      }
       // (No persistence stripping needed — spawnPersistentDieEphemeral
       // already prevented DSN from writing this die to the user flag.)
       mesh.userData.dsnPF2eBridge_dialogId = store.dialogId;
@@ -639,16 +655,39 @@ export function cleanupTaskDiceForStore(store) {
   const wasSecret = store?._secret === true;
   const wasLocalOnly = store?._localOnly === true;
   const broadcastRemove = !wasLocalOnly;
-  for (const id of ids) {
-    try { dice3d.removePersistentDie(id, broadcastRemove); } catch {}
-  }
-  if (wasSecret && ids.length > 0) {
-    emitSecretMirrorCleanup(ids);
-  }
-  if (store) store._spawnedMeshIds = [];
-  if (ids.length > 0) {
-    log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${dialogId} (secret=${wasSecret}, localOnly=${wasLocalOnly})`);
-  }
+
+  // If DSN is currently animating a throw, defer the actual removal by
+  // 200ms so the physics worker isn't reading a mesh that's about to be
+  // destroyed. The _spawnToken bump above already invalidates any
+  // in-flight spawn — that part is sync. Cap the defer at 200ms; if the
+  // throw is still rolling after that, proceed anyway (don't block
+  // dialog close indefinitely on a stuck physics step).
+  const throwEngine = dice3d.box?.throwEngine;
+  const deferMs = throwEngine?.running ? 200 : 0;
+
+  const doRemoval = () => {
+    for (const id of ids) {
+      try { dice3d.removePersistentDie(id, broadcastRemove); } catch {}
+    }
+    if (wasSecret && ids.length > 0) {
+      emitSecretMirrorCleanup(ids);
+    }
+    if (store) store._spawnedMeshIds = [];
+    if (ids.length > 0) {
+      log(`autoSpawn: cleaned up ${ids.length} task dice for dialog ${dialogId} (secret=${wasSecret}, localOnly=${wasLocalOnly})`);
+      // Defensive follow-up sweep: a non-secret broadcast spawn on a
+      // receiver may race our removal broadcast (DSN's removal no-ops
+      // on a not-yet-spawned mesh, then the spawn lands). A sweep 2s
+      // later catches such orphans locally; remote receivers handle
+      // theirs via their own periodic sweep + this hook on their side.
+      setTimeout(() => {
+        try { sweepOrphanTaskDice(); } catch (e) { warn("post-cleanup sweep failed", e); }
+      }, 2000);
+    }
+  };
+
+  if (deferMs > 0) setTimeout(doRemoval, deferMs);
+  else doRemoval();
 }
 
 /**
@@ -670,22 +709,28 @@ export function sweepOrphanTaskDice() {
   if (!Array.isArray(list)) return 0;
   const activeDialogIds = new Set(SlotRegistry.all().map((s) => s.dialogId));
   const toRemove = [];
+  const myId = game.user?.id;
   for (const mesh of list) {
     if (mesh?.userData?.dsnPF2eBridge_owned !== true) continue;
-    // Receiver-side mirror: dialogId here belongs to the OPENER's dialog,
-    // which is not in our local SlotRegistry. Switch to opener-online
-    // check — if the opener is offline, their cleanup broadcast can't
-    // reach us and we must clean the mirror ourselves. (Mirrors from a
-    // prior session are always swept on the first `ready` sweep because
-    // the opener's user object exists but `active` is false until they
-    // reconnect AND re-open the dialog.)
-    if (mesh.userData?.dsnPF2eBridge_secretMirror === true) {
-      const openerId = mesh.userData?.dsnPF2eBridge_openerUserId;
+    const openerId = mesh.userData?.dsnPF2eBridge_openerUserId;
+    const did = mesh.userData?.dsnPF2eBridge_dialogId;
+
+    // Secret-mirror or foreign-broadcast task die (someone else's roll
+    // mirrored or DSN-synced onto our canvas, then tagged by us via the
+    // `task-mark` socket). For both, dialogId belongs to the OPENER's
+    // dialog — not in our local SlotRegistry. Use opener-online check:
+    // if the opener is offline, their cleanup broadcast can't reach us
+    // and we sweep here. Active opener? Trust their broadcast (or our
+    // periodic sweep when they eventually disconnect / close).
+    if (mesh.userData?.dsnPF2eBridge_secretMirror === true || (openerId && openerId !== myId)) {
       const openerUser = openerId ? game.users.get(openerId) : null;
       if (!openerUser || openerUser.active !== true) toRemove.push(mesh);
       continue;
     }
-    const did = mesh.userData?.dsnPF2eBridge_dialogId;
+
+    // Our own (locally-opened) task die: dialogId must be in our active
+    // SlotRegistry. Anything else is an orphan from a dialog whose
+    // close hook didn't fire (mid-render error / app destroyed).
     if (!did || !activeDialogIds.has(did)) toRemove.push(mesh);
   }
   if (toRemove.length === 0) return 0;

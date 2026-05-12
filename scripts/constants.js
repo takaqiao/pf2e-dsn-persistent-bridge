@@ -17,7 +17,6 @@ export const SETTINGS = {
   respectSecretRolls: "respectSecretRolls",
   autoSelectAllOnSpawn: "autoSelectAllOnSpawn",
   rightClickAutoThrow: "rightClickAutoThrow",
-  mirrorThrowToHiddenViewers: "mirrorThrowToHiddenViewers",
   registerPf2eColorsets: "registerPf2eColorsets",
   shakeThreshold: "shakeThreshold",
   restrictPlayerPersistentDice: "restrictPlayerPersistentDice",
