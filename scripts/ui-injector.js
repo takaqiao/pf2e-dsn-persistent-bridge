@@ -1,4 +1,4 @@
-import { MOD_ID, SETTINGS, getSetting, isEnabled, log, err } from "./constants.js";
+import { MOD_ID, SETTINGS, getSetting, isEnabled, log, warn, err } from "./constants.js";
 import { extractSlots } from "./slot-extractor.js";
 import { SlotRegistry, PendingQueue } from "./slot-store.js";
 import { compat } from "./compat.js";
@@ -32,7 +32,31 @@ export function onCloseDialog(app /*, options */) {
   // and we have any filled slots, push them to the per-user PENDING queue so the wrapper sees them.
   if (app._dsnBridgeUnsub) { try { app._dsnBridgeUnsub(); } catch {} app._dsnBridgeUnsub = null; }
   const store = SlotRegistry.get(app.appId);
-  if (!store) return;
+  if (!store) {
+    // Store missing — could be: render failed mid-injection, app.appId
+    // mutated between render and close, our hook fired twice, or the
+    // dialog was destroyed via an unusual code path. Walk the live
+    // persistentDiceList and sweep any task die tagged with this app's
+    // appId so we don't leak orphan meshes when the store snapshot is
+    // gone. (This is a last-ditch defense; the normal cleanup path is
+    // `cleanupTaskDiceForStore` in the else branch.)
+    try {
+      const list = game.dice3d?.box?.persistentDiceList;
+      if (Array.isArray(list) && app?.appId != null) {
+        const orphans = list.filter((m) =>
+          m?.userData?.dsnPF2eBridge_owned === true &&
+          m.userData?.dsnPF2eBridge_secretMirror !== true &&
+          m.userData?.dsnPF2eBridge_dialogId === app.appId
+        );
+        for (const m of orphans) {
+          try { game.dice3d.removePersistentDie(m.userData.persistentId, true); }
+          catch (e) { warn("onCloseDialog fallback: removePersistentDie failed", e); }
+        }
+        if (orphans.length > 0) log(`onCloseDialog: fallback removed ${orphans.length} orphan task die(s) for missing store appId=${app.appId}`);
+      }
+    } catch (e) { warn("onCloseDialog fallback failed", e); }
+    return;
+  }
   const submitted = isDialogSubmitted(app);
   if (submitted && store.hasAnyFilled) {
     const requireAll = getSetting(SETTINGS.requireAllSlots) === true;

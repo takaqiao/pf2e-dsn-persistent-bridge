@@ -1,4 +1,4 @@
-import { MOD_ID, log, warn } from "./constants.js";
+import { MOD_ID, isEnabled, log, warn } from "./constants.js";
 import { registerSettings } from "./settings.js";
 import { compat } from "./compat.js";
 import { installEvaluateWrapper } from "./evaluate-wrapper.js";
@@ -14,6 +14,7 @@ import { installOpenerThrowHook } from "./ephemeral-mirror.js";
 import { installRightClickThrow } from "./right-click-throw.js";
 import { installShakeSensitivity } from "./shake-sensitivity.js";
 import { installRestrictPersistentSpawn } from "./restrict-persistent-spawn.js";
+import { checkAndConfigureGuardian } from "./rng-guardian-compat.js";
 import { maybeShowWelcome } from "./welcome.js";
 import { registerPf2eColorsets } from "./pf2e-colorsets.js";
 
@@ -55,6 +56,17 @@ Hooks.once("ready", () => {
   // refreshed mid-dialog) would otherwise carry the orphan forever. Run
   // once on every client at startup so accumulated orphans get cleaned.
   try { sweepOrphanTaskDice(); } catch (e) { warn("startup orphan sweep failed", e); }
+  // Periodic safety sweep — catches orphans that accumulate when a user
+  // plays for hours without opening another dialog. Without this, the
+  // only sweep triggers are `ready` (once per session) and `dialog open`
+  // (manual). Set to every 5 minutes — long enough to be free; short
+  // enough that a stuck mesh doesn't linger an entire session. Quiet
+  // when there's nothing to do (sweep only logs if it removes anything).
+  setInterval(() => {
+    if (!isEnabled()) return;
+    if (!game.dice3d) return;
+    try { sweepOrphanTaskDice(); } catch (e) { warn("periodic orphan sweep failed", e); }
+  }, 5 * 60 * 1000);
   // Receiver-side cleanup: when our visibility is "mine" / "none", remove
   // foreign task dice as soon as they've settled, so post-throw idle on
   // hidden-viewer clients drops to ~200 ms instead of "until opener closes
@@ -75,6 +87,11 @@ Hooks.once("ready", () => {
   // DSN's toolbox. Bridge task-die spawns bypass via `_dsnBridgeAllowed`
   // marker on opts. GM is always allowed.
   installRestrictPersistentSpawn();
+  // RNG Guardian compatibility: detect the module and (per the rngGuardianMode
+  // setting) auto-add CheckRoll/DamageRoll to its `ignoredRolls` list so
+  // bridge-managed predetermined rolls don't trigger Guardian's "altered"
+  // false positives on every roll. Fire-and-forget (async).
+  checkAndConfigureGuardian().catch((e) => warn("Guardian compat check failed", e));
   // Register colorsets for PF2e damage types DSN doesn't ship by name
   // (electricity / sonic / vitality / void / spirit / mental / bleed /
   // slashing / piercing / bludgeoning / untyped). DSN's damageTypeMap

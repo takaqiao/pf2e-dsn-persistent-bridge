@@ -4,6 +4,45 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.6 — 2026-05-04
+
+### Bugfixes — residual canvas task dice
+
+10-agent parallel audit identified multiple independent paths producing the user-reported "check dice get left on canvas during play" bug. Critical ones fixed in this release:
+
+- **Secret-mirror meshes on receivers had no `_owned` / `_dialogId` tags**, so `sweepOrphanTaskDice` skipped them entirely (`mesh?.userData?.dsnPF2eBridge_owned !== true` shortcut). Even when opener's `emitSecretMirrorCleanup` broadcast was lost (network drop, late join, opener refreshed mid-dialog), nothing on the receiver knew to clean these. `socket.js applyMirror` now tags mirrors with `_owned: true`, `_dialogId: payload.dialogId`, `_openerUserId: payload.openerUserId`. `spawn-helper.spawnTaskDiceForStore` emits `dialogId` in the `secret-mirror` payload. `sweepOrphanTaskDice` now branches on `_secretMirror`: for mirrors, uses opener-online check (`game.users.get(openerId)?.active`) instead of activeDialogIds set — handles the broadcast-lost case. `cleanupTaskDiceForStore` skips mirrors (they belong to a different opener's dialog, not ours).
+
+- **`sweepOrphanTaskDice` only ran on `ready` + dialog open** — accumulating orphans through a long playing session that didn't open new dialogs (just chat / exploration / theater of the mind). Added a 5-minute `setInterval` in `main.js` `ready` hook. Quiet when no orphans (sweep returns early). Gated on `isEnabled()` + `game.dice3d`.
+
+- **`ui-injector.js onCloseDialog` returned silently if `SlotRegistry.get(app.appId)` was undefined**, leaking any task dice for that appId. Possible causes: render failed mid-injection, app.appId mutated, hook fired twice. Added fallback: walk `persistentDiceList` for any non-mirror task die tagged with this app's appId and `removePersistentDie` it. Logs `onCloseDialog: fallback removed N orphan task die(s) for missing store appId=X`.
+
+- **`cleanupTaskDiceForStore` didn't release held dice before removal.** If a user had `mouse.constraintDown=true` on a task die when the dialog closed under them, the physics constraint kept the mesh "pinned" and `removePersistentDie` could leave inconsistent state. Now filters out our IDs from `inputHandler.mouse.heldPersistentDice` and (if list becomes empty) resets `constraintDown / constraint / dragPositions / _resetPreRollState` before iterating removal.
+
+### RNG Guardian compatibility (`scripts/rng-guardian-compat.js`)
+
+Guardian (`7H3LaughingMan/rng-guardian` v14.0.0) replaces `CONFIG.Dice.terms.{c,d,f}` with PCG-seeded subclasses, records seed state on `Roll.evaluate`, and verifies via socket on chat-message render that dice match the seed. Bridge's predetermined-value injection makes every bridge-managed CheckRoll/DamageRoll fail Guardian's verification → continuous false-positive "altered roll" warnings to GM.
+
+Guardian exposes a world-scope `ignoredRolls` setting (array of Roll class names) — adding `CheckRoll` + `DamageRoll` to it skips Guardian's verification for those classes cleanly. New `checkAndConfigureGuardian()` runs at `ready`:
+
+- Detects `game.modules.get("rng-guardian")?.active`.
+- Reads new `rngGuardianMode` world setting (default `auto`).
+- `auto`: GM-only, appends `CheckRoll` + `DamageRoll` to Guardian's `ignoredRolls` if not already present; shows `ui.notifications.info` summarizing the change.
+- `warn`: shows `ui.notifications.warn` with manual configuration instructions.
+- `off`: no-op.
+
+Setting registered via the standard `choices` map so the GM gets a dropdown in Module Settings. New i18n keys: `settings.rngGuardianMode.{name,hint,choices.{auto,warn,off}}` + `rngGuardian.{autoConfigured,warn}` with `{rolls}` format placeholder.
+
+### Diagnostics
+
+- `evaluate-wrapper.js:95` previously had `catch {}` on the `_dsnPersistentSourced` flag set. If the assignment failed, DSN would re-animate the chat message (since the suppressor couldn't recognize the roll as bridge-sourced). Now `err()` so we see it in bug reports.
+- `dsn-listener.js:130` had an empty top-level catch on the persistent-throw chat handler — any error in settle/reveal/dispatch was completely invisible. Now `warn()`.
+
+### Audit findings deferred to 0.4.7
+
+Spawn-token race in slotsShapeChanged: agent-reported but I re-verified that token bump is already FIRST in `cleanupTaskDiceForStore` and spawn loop's token check is synchronous with no yield to tagging. Agents over-reported; the race is already covered. Deleted from task list.
+
+Remaining medium/low findings (auto-submit timer cleanup, symmetric public-spawn race guard, TTL pruning centralization, dead `mirrorThrowToHiddenViewers` setting, throwEngine poll, foreign-mirror all-visibility, README compatibility note) shipped in 0.4.7.
+
 ## 0.4.5 — 2026-05-04
 
 ### Features

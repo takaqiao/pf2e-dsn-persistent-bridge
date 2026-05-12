@@ -113,10 +113,23 @@
       "restrictPlayerPersistentDice": {
         "name": "禁止玩家手动生成装饰用的 persistent dice(世界)",
         "hint": "默认开启。阻止玩家通过 DSN 工具盒或 console 自己往画布上放装饰用的 persistent dice(比如随手摆一颗 d20 把玩)。只允许 bridge 模块为掷骰生成的任务骰出现。GM 不受限制。开启之前已经存在的装饰骰不会被自动清除 —— 让 GM 用 DSN 工具盒的「Clear all」一次清掉。"
+      },
+      "rngGuardianMode": {
+        "name": "RNG Guardian 兼容模式(世界)",
+        "hint": "处理与 RNG Guardian 模块的冲突。Guardian 会用 PCG 种子验证每次掷骰,如果公布的骰面和种子算出来的不一致就给 GM 报警 —— bridge 预定值的掷骰每次都会被它标「被篡改」。「自动」= 静默把 CheckRoll 和 DamageRoll 加入 Guardian 的忽略名单(推荐);「警告」= 给 GM 弹一次提示,让他自己配;「关闭」= 完全不管。只在 Guardian 已安装并启用时有效。",
+        "choices": {
+          "auto": "自动配置 Guardian 忽略名单(推荐)",
+          "warn": "只提示 GM,不自动配置",
+          "off": "什么都不做"
+        }
       }
     },
     "restrictSpawn": {
       "blocked": "GM 已限制 persistent dice —— 只允许 bridge 为掷骰生成的任务骰。"
+    },
+    "rngGuardian": {
+      "autoConfigured": "检测到 RNG Guardian —— 已自动把 {rolls} 加入它的「忽略 Roll 类型」列表。bridge 会预定掷骰结果,否则 Guardian 会每次都判定为「掷骰被篡改」。",
+      "warn": "RNG Guardian 已启用。请把 {rolls} 加到它的「忽略 Roll 类型」设置里(设置 → 模组设置 → RNG Guardian),否则 bridge 的每次 PF2e 掷骰都会被 Guardian 误报为篡改。"
     },
     "shakeSensitivity": {
       "label": "灵敏度",

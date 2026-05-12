@@ -99,6 +99,10 @@ function setLockOnMesh(mesh, lockedBy) {
  * @param {object} payload.position         {x, y} canvas-percent coords
  * @param {string} payload.persistentId
  * @param {string} payload.openerUserId
+ * @param {string} payload.dialogId         opener's dialog appId — tagged
+ *   onto the receiver's mirror mesh for orphan-sweep identification when
+ *   the opener's cleanup broadcast was lost (network/disconnect).
+ * @param {string|null} payload.flavor      PF2e damage type, if applicable
  */
 export function emitSecretMirror(payload) {
   if (!payload?.persistentId) return;
@@ -208,6 +212,16 @@ async function applyMirror(payload) {
     }
     if (mesh?.userData) {
       mesh.userData.dsnPF2eBridge_secretMirror = true;
+      // Sweep recognition: `_owned` lets sweepOrphanTaskDice pick up this
+      // mesh as a bridge-managed mirror; the `_secretMirror` flag tells
+      // it to use the opener-online check instead of the local-dialog
+      // check. Without these, mirrors that miss the cleanup broadcast
+      // (network drop / late join) persist on canvas forever — exactly
+      // the "logging in and finding stale persistent dice" bug Chasarooni
+      // reported in v0.4.5.
+      mesh.userData.dsnPF2eBridge_owned = true;
+      mesh.userData.dsnPF2eBridge_dialogId = payload.dialogId ?? null;
+      mesh.userData.dsnPF2eBridge_openerUserId = payload.openerUserId;
       // Mirror meshes are display-only — nobody on this client should be
       // able to drag/throw them. Lock them to the opener so DSN's
       // InputHandler rejects every drag attempt on this client.

@@ -185,4 +185,18 @@ export function registerSettings() {
     type: Boolean,
     default: true,
   });
+
+  game.settings.register(MOD_ID, SETTINGS.rngGuardianMode, {
+    name: `${MOD_ID}.settings.rngGuardianMode.name`,
+    hint: `${MOD_ID}.settings.rngGuardianMode.hint`,
+    scope: "world",
+    config: true,
+    type: String,
+    default: "auto",
+    choices: {
+      auto: `${MOD_ID}.settings.rngGuardianMode.choices.auto`,
+      warn: `${MOD_ID}.settings.rngGuardianMode.choices.warn`,
+      off: `${MOD_ID}.settings.rngGuardianMode.choices.off`,
+    },
+  });
 }

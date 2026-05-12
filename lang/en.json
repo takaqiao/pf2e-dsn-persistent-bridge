@@ -113,10 +113,23 @@
       "restrictPlayerPersistentDice": {
         "name": "Block players from creating decorative persistent dice (world)",
         "hint": "Default on. Stops players from spawning their own persistent dice through DSN's toolbox or console (e.g., putting a decorative d20 on the canvas to fidget with). Only the bridge module's task dice are allowed to appear. The GM is unrestricted. Existing decorative dice from before this was turned on aren't auto-removed — clear them via DSN's toolbox 'Clear all'."
+      },
+      "rngGuardianMode": {
+        "name": "RNG Guardian compatibility (world)",
+        "hint": "How to handle the RNG Guardian module if it's also installed. Guardian verifies dice rolls against a recorded PCG seed and warns the GM if values don't match — bridge-managed predetermined rolls would trigger this on every check/damage roll. 'Auto' adds CheckRoll + DamageRoll to Guardian's ignore list silently. 'Warn' shows the GM a one-time notification. 'Off' does nothing. Only meaningful if Guardian is installed and active.",
+        "choices": {
+          "auto": "Auto-configure Guardian's ignore list (recommended)",
+          "warn": "Warn the GM, don't auto-configure",
+          "off": "Do nothing"
+        }
       }
     },
     "restrictSpawn": {
       "blocked": "GM has restricted persistent dice — only the bridge's task dice are allowed."
+    },
+    "rngGuardian": {
+      "autoConfigured": "RNG Guardian detected — added {rolls} to its 'Ignored Rolls' list. The bridge predetermines roll values, which Guardian would otherwise flag as altered.",
+      "warn": "RNG Guardian is active. Add {rolls} to its 'Ignored Rolls' setting (Settings → Module Settings → RNG Guardian) to prevent false-positive cheat warnings on every PF2e bridge-managed roll."
     },
     "shakeSensitivity": {
       "label": "Shake",
