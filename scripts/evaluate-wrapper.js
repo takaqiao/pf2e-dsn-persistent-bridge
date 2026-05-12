@@ -92,7 +92,14 @@ async function evalWrapper(wrapped, ...args) {
   try {
     this.options ??= {};
     this.options._dsnPersistentSourced = true;
-  } catch {}
+  } catch (e) {
+    // Critical: this flag tells suppressDsnThrowMessage to not re-show
+    // the DSN throw animation for this roll (the user already saw the
+    // physical persistent dice land). If we can't set it, the chat
+    // message will trigger a redundant DSN animation. Surface the error
+    // instead of swallowing — we need to see it in bug reports.
+    err("failed to mark roll as persistent-sourced (DSN may re-animate)", e);
+  }
 
   const dice = collectDice(this);
   log("eval: injecting", {

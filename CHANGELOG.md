@@ -4,6 +4,53 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.6 — Persistent-dice leak fixes + RNG Guardian compatibility
+
+### Fixed: residual dice on canvas during play
+
+Several independent paths could leave bridge task dice on the canvas
+after a roll dialog closed. All addressed:
+
+- **Secret-roll mirrors on other players' canvas could persist forever**
+  if your "cleanup" socket message was lost (someone disconnected,
+  refreshed, or joined right after the dialog opened). The mirror dice
+  now carry enough identifying info that the periodic cleanup sweep
+  removes them as soon as the original roller goes offline.
+- **A new safety sweep runs every 5 minutes** even when nobody opens a
+  dialog. Before, stale dice could linger until you opened another
+  dialog or refreshed — possibly for hours if you were just exploring
+  the canvas.
+- **If our roll-dialog close handler can't find its slot snapshot**
+  (rare — render error or destroyed app), it now walks the canvas
+  directly and cleans up any dice tagged with that dialog's id.
+- **Dice held mid-drag when a dialog closes** are now force-released
+  before removal, so a stuck physics constraint can't keep them on the
+  canvas.
+
+### New: RNG Guardian compatibility
+
+If you have the **RNG Guardian** module installed, it would flag every
+bridge-mediated roll as "altered" (Guardian verifies dice against a
+recorded seed; the bridge deliberately predetermines values). The
+module now auto-detects Guardian and adds `CheckRoll` + `DamageRoll`
+to Guardian's "Ignored Rolls" list at startup. Configurable via
+Settings → Module Settings → "RNG Guardian compatibility":
+
+- **Auto-configure** (default, recommended) — silently set up Guardian's
+  ignore list so warnings stop.
+- **Warn the GM** — show a one-time notification, let the GM decide.
+- **Do nothing** — for tables that want to keep the warnings.
+
+Only meaningful if Guardian is installed and active.
+
+### Internal diagnostics
+
+Two previously-silenced error paths now log: a roll's persistent-
+sourced flag failing to apply (could cause redundant DSN animations),
+and the persistent-throw chat handler swallowing errors entirely. Both
+were invisible before; now they show in the console when verbose
+logging is on.
+
 ## 0.4.5 — GM-only decorative persistent dice
 
 - New world setting **"Block players from creating decorative persistent

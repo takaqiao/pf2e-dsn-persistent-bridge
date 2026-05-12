@@ -388,6 +388,11 @@ export async function spawnTaskDiceForStore(store) {
           position: pos,
           persistentId: mesh.userData.persistentId,
           openerUserId: game.user.id,
+          // dialogId lets the receiver tag its mirror with the opener's
+          // dialog id so a receiver-side orphan sweep can identify it.
+          // (The mirror gets `dsnPF2eBridge_owned + _dialogId + _openerUserId`
+          // in `applyMirror`; sweep cleans mirrors whose opener went offline.)
+          dialogId: store.dialogId,
           flavor: slot.flavor ?? null,
         });
       } else if (synchronize && slot.flavor) {
@@ -583,12 +588,46 @@ export function cleanupTaskDiceForStore(store) {
   // catches every mesh that's actually on the canvas right now.
   const dialogId = store?.dialogId;
   const ids = [];
+  const meshes = [];
   if (dialogId != null) {
     for (const mesh of list) {
       if (mesh?.userData?.dsnPF2eBridge_owned !== true) continue;
+      // Skip receiver-side mirrors: they belong to a different opener's
+      // dialog and have the opener's appId as dialogId. They're cleaned
+      // via `secret-mirror-cleanup` broadcast (handled in socket.js)
+      // and `sweepOrphanTaskDice` (opener-offline fallback).
+      if (mesh.userData?.dsnPF2eBridge_secretMirror === true) continue;
       if (mesh.userData?.dsnPF2eBridge_dialogId !== dialogId) continue;
       const id = mesh.userData?.persistentId;
-      if (id) ids.push(id);
+      if (id) {
+        ids.push(id);
+        meshes.push(mesh);
+      }
+    }
+  }
+
+  // If any of our dice are currently held by the local input handler
+  // (user picked one up and the dialog is closing under them), force-
+  // release them BEFORE removePersistentDie. Otherwise DSN's constraint
+  // remains pinned and the mesh can survive removal in an inconsistent
+  // physics state.
+  const ih = dice3d.box?.inputHandler;
+  if (ih?.mouse?.heldPersistentDice?.length > 0 && ids.length > 0) {
+    const idSet = new Set(ids);
+    const stillHeld = ih.mouse.heldPersistentDice.filter(
+      (m) => !idSet.has(m?.userData?.persistentId)
+    );
+    if (stillHeld.length !== ih.mouse.heldPersistentDice.length) {
+      log(`cleanup: force-releasing ${ih.mouse.heldPersistentDice.length - stillHeld.length} held task die(s)`);
+      ih.mouse.heldPersistentDice = stillHeld;
+      if (stillHeld.length === 0) {
+        try {
+          ih.mouse.constraintDown = false;
+          ih.mouse.constraint = false;
+          ih.mouse.dragPositions = [];
+          ih._resetPreRollState?.();
+        } catch (e) { warn("cleanup: force-release post-hooks failed", e); }
+      }
     }
   }
 
@@ -633,6 +672,19 @@ export function sweepOrphanTaskDice() {
   const toRemove = [];
   for (const mesh of list) {
     if (mesh?.userData?.dsnPF2eBridge_owned !== true) continue;
+    // Receiver-side mirror: dialogId here belongs to the OPENER's dialog,
+    // which is not in our local SlotRegistry. Switch to opener-online
+    // check — if the opener is offline, their cleanup broadcast can't
+    // reach us and we must clean the mirror ourselves. (Mirrors from a
+    // prior session are always swept on the first `ready` sweep because
+    // the opener's user object exists but `active` is false until they
+    // reconnect AND re-open the dialog.)
+    if (mesh.userData?.dsnPF2eBridge_secretMirror === true) {
+      const openerId = mesh.userData?.dsnPF2eBridge_openerUserId;
+      const openerUser = openerId ? game.users.get(openerId) : null;
+      if (!openerUser || openerUser.active !== true) toRemove.push(mesh);
+      continue;
+    }
     const did = mesh.userData?.dsnPF2eBridge_dialogId;
     if (!did || !activeDialogIds.has(did)) toRemove.push(mesh);
   }

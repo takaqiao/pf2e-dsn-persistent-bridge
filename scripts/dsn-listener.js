@@ -124,10 +124,19 @@ function onChatMessage(message) {
         message._dice3dPendingRenders = (message._dice3dPendingRenders || 0) + 1;
         hidden = true;
       }
-    } catch {}
+    } catch (e) {
+      // DSN setting lookup failure — fall through to "always reveal" path.
+      log("onChatMessage: DSN immediatelyDisplayChatMessages setting unreadable", e);
+    }
 
     settleAndReveal(message, hidden);
-  } catch {}
+  } catch (e) {
+    // Top-level handler — log so we can see why the persistent-throw
+    // settle/reveal path failed instead of silently dropping the slot
+    // dispatch. (Was previously an empty catch; bugs here have been
+    // invisible until now.)
+    warn("onChatMessage failed", e);
+  }
 }
 
 async function settleAndReveal(message, hidden) {

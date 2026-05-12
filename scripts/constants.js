@@ -21,6 +21,7 @@ export const SETTINGS = {
   registerPf2eColorsets: "registerPf2eColorsets",
   shakeThreshold: "shakeThreshold",
   restrictPlayerPersistentDice: "restrictPlayerPersistentDice",
+  rngGuardianMode: "rngGuardianMode",
   verboseLogging: "verboseLogging",
 };
 
