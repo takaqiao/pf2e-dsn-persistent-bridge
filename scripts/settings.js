@@ -149,15 +149,6 @@ export function registerSettings() {
     default: true,
   });
 
-  game.settings.register(MOD_ID, SETTINGS.mirrorThrowToHiddenViewers, {
-    name: `${MOD_ID}.settings.mirrorThrowToHiddenViewers.name`,
-    hint: `${MOD_ID}.settings.mirrorThrowToHiddenViewers.hint`,
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-  });
-
   game.settings.register(MOD_ID, SETTINGS.registerPf2eColorsets, {
     name: `${MOD_ID}.settings.registerPf2eColorsets.name`,
     hint: `${MOD_ID}.settings.registerPf2eColorsets.hint`,

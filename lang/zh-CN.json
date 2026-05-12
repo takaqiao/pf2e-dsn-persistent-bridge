@@ -94,10 +94,6 @@
         "name": "右键扔骰",
         "hint": "默认开启。右键画布上你自己的骰子即可随机方向扔出 —— 不用使劲摇晃。"
       },
-      "mirrorThrowToHiddenViewers": {
-        "name": "向隐藏视角玩家显示扔骰动画(世界设置)",
-        "hint": "默认开启。DSN visibility 设为「仅显示自己」或「全部隐藏」的玩家,在别人扔骰时会看到一段简短的 3D 动画,而不是什么都看不到。日常画布对他们仍然干净。"
-      },
       "registerPf2eColorsets": {
         "name": "向 DSN 注册 PF2e 伤害色板",
         "hint": "默认开启。把 11 个 PF2e 伤害类型(electricity / sonic / vitality / void / spirit / mental / bleed / slashing / piercing / bludgeoning / untyped)添加到 DSN 的 Damage Type Configuration 配色面板。装了「PF2e Dice Flavor Fix」时自动跳过。"

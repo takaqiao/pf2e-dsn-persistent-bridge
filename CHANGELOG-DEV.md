@@ -4,6 +4,38 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.7 — 2026-05-04
+
+### Bug fixes — second pass (medium/low audit findings from 0.4.6 deferral)
+
+- **`ui-injector.js` auto-submit timer leaked across rapid open/close.** `setTimeout(() => triggerSubmit(app, root), delay)` had no cancellation handle. Closing the dialog during the delay window (default 1 s, configurable up to ~unbounded) fired triggerSubmit against a destroyed app. Now stores the handle on `s._autoSubmitTimer`; `onCloseDialog` calls `clearTimeout` on it before cleanup. Eliminates the orphan-timer accumulation pattern.
+
+- **`spawn-helper.cleanupTaskDiceForStore` mid-throw race.** Previously removePersistentDie was called synchronously even when `throwEngine.running === true`. The physics worker could still be reading the mesh, producing inconsistent state on removal. Now defers the removal block by 200 ms when `throwEngine.running` is set; capped so a stuck physics step doesn't block dialog close indefinitely.
+
+- **Follow-up sweep after cleanup.** `cleanupTaskDiceForStore` now schedules a `sweepOrphanTaskDice` 2 s after its removal block. Catches non-secret broadcast spawn races where DSN's removal arrived BEFORE the receiver's spawn landed (`removePersistentDie` no-ops on a not-yet-spawned mesh; spawn then completes and the mesh persists). Symmetric to the secret-mirror `recentlyCleanedUpMirrors` guard but works for any broadcast spawn.
+
+- **TTL pruning centralized for socket caches.** `recentlyCleanedUpMirrors`, `pendingFlavorSync`, and `foreign-mirror-cleaner.removedRecently` each used per-entry `setTimeout` for expiry. Replaced with `Map<id, expiry-timestamp>` plus a single `setInterval(pruneSocketCaches, 2000)` registered in `registerSocket`. Avoids unbounded timer growth if cleanup events arrive faster than individual timers fire (was a real risk in tables with rapid-fire secret rolls).
+
+### Feature: foreign-broadcast task die identification
+
+- **Public broadcast spawns (DSN sync) on receivers now get bridge tags via a new `task-mark` socket message.** Problem: DSN's broadcast doesn't carry our custom `userData.dsnPF2eBridge_*` tags — receivers' broadcast-spawned task dice are visually indistinguishable from manually-placed decorative dice. `sweepOrphanTaskDice` skipped them (`_owned !== true` guard). If the opener disconnected without broadcasting cleanup, foreign task dice on receivers persisted until DSN's "Clear all".
+
+  Fix: opener emits `emitTaskMarkSync({ persistentId, dialogId, openerUserId })` immediately after each `synchronize=true` spawn. Receivers (in `socket.applyTaskMarkSync`) find their local mesh by persistentId and tag it with `_owned + _dialogId + _openerUserId`. Race-safe: if the mark arrives before the broadcast spawn lands, it queues in `pendingTaskMarks` and flushes on the next `dice-so-nice.persistentDiceChanged` hook.
+
+  `sweepOrphanTaskDice` now branches on `_secretMirror === true || (_openerUserId && _openerUserId !== game.user.id)` — both paths use opener-online check. Our own task dice (local `_openerUserId` absent or === self) fall through to the existing `activeDialogIds.has(did)` check. Three-way decision tree: foreign-mirror, foreign-broadcast, or local task die.
+
+### Feature: Guardian per-roll bypass
+
+- **Wrapped `CONFIG.queries["rng-guardian.checkRoll"]`** at `ready` (after Guardian's `init` registers the entry). For rolls carrying `roll.options._dsnPersistentSourced === true` (set by `evaluate-wrapper.js` on bridge-injected evaluations), the wrap returns early — Guardian's PCG verification skipped without consulting the `ignoredRolls` class list.
+
+  This is supplementary to the existing class-level ignore approach. It only covers the **query-based** verification path (non-active-GM users querying the active GM via `CONFIG.queries`). Guardian's **`createChatMessage` hook** calls a module-scoped local `checkRoll` directly, which can't be intercepted without modifying Guardian's source. That path only fires on the active GM for non-GM rolls, and the class-level ignore list still handles it. Net practical effect: query-based path now does per-roll bypass; hook-based path still uses class-level bypass. Both are required for full coverage; both ship together.
+
+### Cleanup
+
+- **Removed dead setting `mirrorThrowToHiddenViewers`** (`SETTINGS.mirrorThrowToHiddenViewers` declared, registered in settings.js with i18n entries, never read anywhere in code). Standard "registered-but-unused" — clean removal.
+
+- **README "Known interactions / compatibility" section** added documenting DSN 6.2.x verification, PF2e v8.x V1 dialog confirmation, PF2e Dice Flavor Fix auto-detect, and a detailed Guardian compatibility writeup including the architectural limit on per-roll bypass for the hook-based verification path.
+
 ## 0.4.6 — 2026-05-04
 
 ### Bugfixes — residual canvas task dice

@@ -69,6 +69,13 @@ export function onCloseDialog(app /*, options */) {
       log("dialog submitted, pushed predetermined values:", predetermined);
     }
   }
+  // Cancel any pending auto-submit timer before cleanup — the dialog is
+  // closing, so firing triggerSubmit() against the destroyed app would
+  // be at best a no-op, at worst a confusing log/error.
+  if (store?._autoSubmitTimer) {
+    clearTimeout(store._autoSubmitTimer);
+    store._autoSubmitTimer = null;
+  }
   // Always clean up task dice we spawned for this dialog, regardless of
   // submit / cancel. User-spawned decorative dice are untouched (they were
   // only hidden — restored below if no other dialog is still open).
@@ -152,7 +159,15 @@ async function injectTray(app, $html) {
       ) {
         s._autoSubmitted = true;
         const delay = Math.max(0, Number(getSetting(SETTINGS.autoSubmitDelayMs) ?? 1000));
-        setTimeout(() => triggerSubmit(app, root), delay);
+        // Store the timer handle on the store so onCloseDialog can clear
+        // it. Without this, closing the dialog during the delay (e.g.
+        // user cancels right after the last die lands) fires triggerSubmit
+        // against a destroyed app and accumulates orphan timers across
+        // rapid open/close cycles.
+        s._autoSubmitTimer = setTimeout(() => {
+          s._autoSubmitTimer = null;
+          triggerSubmit(app, root);
+        }, delay);
       }
     });
 

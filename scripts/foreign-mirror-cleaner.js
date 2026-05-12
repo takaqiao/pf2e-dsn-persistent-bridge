@@ -25,7 +25,9 @@ import { log } from "./constants.js";
  * if the die was already removed locally.
  */
 
-const removedRecently = new Set();
+// Map<persistentId, expiry-timestamp> instead of Set+per-entry setTimeout.
+// Pruned by a single interval started in `startForeignMirrorCleaner`.
+const removedRecently = new Map();
 const REMEMBER_MS = 5000;
 
 function isHiddenViewer() {
@@ -46,8 +48,7 @@ function sweepForeignTaskDice() {
     if (mesh.userData.ownerUserId === myId) continue;
     const id = mesh.userData.persistentId;
     if (!id || removedRecently.has(id)) continue;
-    removedRecently.add(id);
-    setTimeout(() => removedRecently.delete(id), REMEMBER_MS);
+    removedRecently.set(id, Date.now() + REMEMBER_MS);
     queueMicrotask(() => {
       try { game.dice3d.removePersistentDie(id, false); } catch {}
     });
@@ -63,5 +64,13 @@ export function startForeignMirrorCleaner() {
   // foreign task die from a prior session (rare; opener-side restore
   // suppression should prevent this, but defensive).
   try { sweepForeignTaskDice(); } catch {}
+  // Centralized prune for `removedRecently` — single interval instead of
+  // per-entry setTimeout. Same pattern as socket.js's pruneSocketCaches.
+  setInterval(() => {
+    const now = Date.now();
+    for (const [id, expiry] of removedRecently) {
+      if (expiry <= now) removedRecently.delete(id);
+    }
+  }, 2000);
   log("hidden-viewer skip-on-receive registered");
 }

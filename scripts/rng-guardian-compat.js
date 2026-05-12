@@ -22,9 +22,24 @@ import { MOD_ID, SETTINGS, getSetting, log, warn } from "./constants.js";
  * GM-set `rngGuardianMode`):
  *   - `auto` (default) — silently appends CheckRoll/DamageRoll to
  *     Guardian's `ignoredRolls`. Only the GM can do this (world setting).
+ *     Also wraps Guardian's `CONFIG.queries["rng-guardian.checkRoll"]`
+ *     verification function so bridge-sourced rolls (marked with
+ *     `roll.options._dsnPersistentSourced === true`) skip verification
+ *     even on per-roll basis — finer-grained than the class-level
+ *     ignore list, useful when other modules also produce CheckRoll /
+ *     DamageRoll without bridge involvement.
  *   - `warn` — shows a one-time `ui.notifications.warn` telling the GM
  *     to configure Guardian's ignore list manually.
  *   - `off` — do nothing (user has decided to live with the warnings).
+ *
+ * **Architectural limitation**: Guardian's `createChatMessage` hook calls
+ * a module-scoped local `checkRoll` function directly (not via
+ * `CONFIG.queries`), and there's no way to intercept it without
+ * modifying Guardian's source. That path only fires on the active GM
+ * for non-GM chat messages — wrapping CONFIG.queries does NOT cover it.
+ * That's why the broad `ignoredRolls` approach is still the primary
+ * mechanism; the CONFIG.queries wrap is supplementary protection for
+ * the secondary query-based verification path.
  */
 
 const GUARDIAN_ID = "rng-guardian";
@@ -41,6 +56,33 @@ export async function checkAndConfigureGuardian() {
   if (mode === "off") {
     log("Guardian compat: skipped (rngGuardianMode=off)");
     return;
+  }
+
+  // Per-roll bypass: wrap Guardian's CONFIG.queries verification entry so
+  // bridge-sourced rolls (carrying `roll.options._dsnPersistentSourced`)
+  // skip verification even if they aren't in the class-level ignore
+  // list. Only covers the query-based cross-client verification path;
+  // active-GM-local createChatMessage path still relies on ignoredRolls.
+  // Idempotent via _dsnBridgeWrapped sentinel.
+  try {
+    const queryKey = `${GUARDIAN_ID}.checkRoll`;
+    const origQuery = CONFIG.queries?.[queryKey];
+    if (origQuery && !origQuery._dsnBridgeWrapped) {
+      const wrapped = async function (args) {
+        if (args?.roll?.options?._dsnPersistentSourced === true) {
+          // Bridge-injected roll — values are predetermined from
+          // physical dice, Guardian's PCG verification would always
+          // fail. Skip cleanly.
+          return;
+        }
+        return origQuery(args);
+      };
+      wrapped._dsnBridgeWrapped = true;
+      CONFIG.queries[queryKey] = wrapped;
+      log("Guardian compat: wrapped CONFIG.queries[rng-guardian.checkRoll] for per-roll bypass");
+    }
+  } catch (e) {
+    warn("Guardian compat: failed to wrap CONFIG.queries", e);
   }
 
   // The `ignoredRolls` setting is world-scoped — only GM can write it.

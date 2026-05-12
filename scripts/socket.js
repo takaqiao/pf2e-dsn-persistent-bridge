@@ -32,7 +32,29 @@ export function registerSocket() {
   game.socket.on(SOCKET_NAME, onSocketMessage);
   Hooks.on("dice-so-nice.persistentDiceChanged", flushPendingLocks);
   Hooks.on("dice-so-nice.persistentDiceChanged", flushPendingFlavorSync);
+  Hooks.on("dice-so-nice.persistentDiceChanged", flushPendingTaskMarks);
+  // Centralized TTL pruning for socket-side caches. One interval rather
+  // than per-entry setTimeout: avoids unbounded timer count if cleanup
+  // events arrive faster than their individual TTLs (was an unbounded-
+  // growth risk in 0.4.x for tables with rapid-fire secret rolls).
+  setInterval(pruneSocketCaches, 2000);
   log("socket registered:", SOCKET_NAME);
+}
+
+function pruneSocketCaches() {
+  const now = Date.now();
+  // recentlyCleanedUpMirrors: value is expiry timestamp
+  for (const [id, expiry] of recentlyCleanedUpMirrors) {
+    if (expiry <= now) recentlyCleanedUpMirrors.delete(id);
+  }
+  // pendingFlavorSync: value is {flavor, ts} — expiry = ts + TTL
+  for (const [id, entry] of pendingFlavorSync) {
+    if ((entry?.ts ?? 0) + FLAVOR_SYNC_TTL_MS <= now) pendingFlavorSync.delete(id);
+  }
+  // pendingTaskMarks: value is {dialogId, openerUserId, ts} — expiry = ts + TTL
+  for (const [id, entry] of pendingTaskMarks) {
+    if ((entry?.ts ?? 0) + TASK_MARK_TTL_MS <= now) pendingTaskMarks.delete(id);
+  }
 }
 
 /* -------- LOCK SYNC -------- */
@@ -148,7 +170,12 @@ function decideViewerVisibility({ mode, openerUserId }) {
  * on the receiver. We track recently-cleaned-up ids in a small Set so the
  * spawn-completion path can detect "you arrived too late" and self-remove.
  */
-const recentlyCleanedUpMirrors = new Set();
+// Map<persistentId, expiry-timestamp> instead of Set+per-entry setTimeout.
+// One module-level interval prunes expired entries every 2s — see
+// `registerSocket` for the schedule. Avoids per-entry timer churn and
+// unbounded growth if `applyMirrorCleanup` fires faster than its
+// individual setTimeouts could fire.
+const recentlyCleanedUpMirrors = new Map();
 const MIRROR_CLEANUP_REMEMBER_MS = 5000;
 
 async function applyMirror(payload) {
@@ -239,10 +266,10 @@ function applyMirrorCleanup({ persistentIds }) {
   for (const id of (persistentIds || [])) {
     if (!id) continue;
     // Mark BEFORE we attempt removal: applyMirror's spawn-completion path
-    // checks this set, so a tardy cleanup that arrived mid-spawn still
-    // gets honored when the spawn finally lands.
-    recentlyCleanedUpMirrors.add(id);
-    setTimeout(() => recentlyCleanedUpMirrors.delete(id), MIRROR_CLEANUP_REMEMBER_MS);
+    // checks this map, so a tardy cleanup that arrived mid-spawn still
+    // gets honored when the spawn finally lands. TTL pruned by the
+    // centralized interval started in `registerSocket`.
+    recentlyCleanedUpMirrors.set(id, Date.now() + MIRROR_CLEANUP_REMEMBER_MS);
     try { dice3d.removePersistentDie(id, false); } catch {}
   }
 }
@@ -302,8 +329,9 @@ async function applyTaskFlavorSync(payload) {
     // flavor; flushPendingFlavorSync (on persistentDiceChanged) will pick
     // it up when the mesh lands.
     flavorDiag(`receive: mesh not yet on canvas, queued for flush`);
+    // TTL pruned by the centralized interval in `registerSocket`. The
+    // entry's `ts` field is the insertion time; expiry = ts + TTL.
     pendingFlavorSync.set(persistentId, { flavor, ts: Date.now() });
-    setTimeout(() => pendingFlavorSync.delete(persistentId), FLAVOR_SYNC_TTL_MS);
     return;
   }
   await applyFlavoredAppearance(mesh, flavor);
@@ -429,6 +457,72 @@ function flushPendingFlavorSync() {
   }
 }
 
+/* -------- TASK MARK SYNC (public non-secret rolls) -------- */
+//
+// DSN's broadcast sync doesn't carry our custom `userData.dsnPF2eBridge_*`
+// tags. So when a receiver gets a broadcast-spawned task die, their local
+// mesh has no bridge markers — and `sweepOrphanTaskDice` skips it (the
+// `_owned !== true` guard). If the opener disconnects without
+// broadcasting cleanup, the foreign task die orphans forever.
+//
+// Solution: opener emits a `task-mark` socket message right after a
+// non-secret broadcast spawn. Receivers find their mesh by persistentId
+// and tag it with `_owned + _dialogId + _openerUserId`. Sweep then uses
+// opener-online check (like secret-mirror) to clean stale ones.
+//
+// Race: if the mark arrives before DSN's broadcast spawn lands on the
+// receiver, we queue it in `pendingTaskMarks` and flush on
+// `persistentDiceChanged`. Same pattern as flavor-sync.
+
+const pendingTaskMarks = new Map(); // persistentId -> {dialogId, openerUserId, ts}
+const TASK_MARK_TTL_MS = 30000;
+
+export function emitTaskMarkSync({ persistentId, dialogId, openerUserId }) {
+  if (!persistentId) return;
+  try {
+    game.socket?.emit(SOCKET_NAME, {
+      type: "task-mark",
+      persistentId,
+      dialogId,
+      openerUserId,
+    });
+  } catch (e) {
+    warn("emitTaskMarkSync failed", e);
+  }
+}
+
+function applyTaskMarkSync(payload) {
+  const { persistentId, dialogId, openerUserId } = payload || {};
+  if (!persistentId) return;
+  if (openerUserId === game.user?.id) return; // we are the opener; our local spawn already tagged
+  const list = game.dice3d?.box?.persistentDiceList ?? [];
+  const mesh = list.find((m) => m?.userData?.persistentId === persistentId);
+  if (!mesh) {
+    pendingTaskMarks.set(persistentId, { dialogId, openerUserId, ts: Date.now() });
+    return;
+  }
+  applyTaskMarkToMesh(mesh, dialogId, openerUserId);
+}
+
+function applyTaskMarkToMesh(mesh, dialogId, openerUserId) {
+  if (!mesh?.userData) return;
+  mesh.userData.dsnPF2eBridge_owned = true;
+  mesh.userData.dsnPF2eBridge_dialogId = dialogId ?? null;
+  mesh.userData.dsnPF2eBridge_openerUserId = openerUserId ?? null;
+}
+
+function flushPendingTaskMarks() {
+  if (pendingTaskMarks.size === 0) return;
+  const list = game.dice3d?.box?.persistentDiceList;
+  if (!Array.isArray(list)) return;
+  for (const [id, entry] of [...pendingTaskMarks]) {
+    const mesh = list.find((m) => m?.userData?.persistentId === id);
+    if (!mesh) continue;
+    pendingTaskMarks.delete(id);
+    applyTaskMarkToMesh(mesh, entry.dialogId, entry.openerUserId);
+  }
+}
+
 /* -------- SOCKET ROUTER -------- */
 
 function onSocketMessage(payload) {
@@ -448,6 +542,9 @@ function onSocketMessage(payload) {
       break;
     case "task-flavor-sync":
       applyTaskFlavorSync(payload);
+      break;
+    case "task-mark":
+      applyTaskMarkSync(payload);
       break;
     default:
       // unknown / forward-compat — ignore

@@ -4,6 +4,46 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.7 — More leak protection + Guardian per-roll bypass
+
+### Fixed: more dice-leak edge cases
+
+- **Auto-submit timer outliving the dialog.** If you closed a dialog
+  during the auto-submit delay (default 1 second after all slots fill),
+  the timer would still fire against a destroyed dialog. Now cancelled
+  cleanly on close. Stops orphan timer accumulation if you open and
+  close dialogs rapidly.
+- **Public broadcast dice that other players see** are now tagged with
+  their opener so a periodic sweep cleans them when the opener
+  disconnects without broadcasting cleanup. Before, those dice could
+  stay on other players' canvases until manual "Clear all".
+- **Cleanup during mid-throw animation** now waits up to 200ms for the
+  throw to settle before removing the mesh, avoiding inconsistent
+  physics state.
+- **Follow-up sweep 2 seconds after each cleanup** catches stragglers
+  from broadcast race conditions (where DSN's remove arrives before
+  the receiver's spawn lands).
+
+### Improved: RNG Guardian compatibility
+
+- Added a **per-roll bypass** on top of the existing class-level ignore
+  list. Bridge-mediated rolls now also wrap Guardian's verification
+  query so they're skipped explicitly when sourced from physical dice.
+  Other CheckRoll / DamageRoll invocations (macros, RNG fallbacks)
+  still go through Guardian normally on the cross-client query path.
+- One Guardian-internal verification path can't be intercepted from
+  outside (active GM's local `createChatMessage` handler — it calls a
+  module-private function); for that path the class-level ignore is
+  still the only mechanism. The README's "Known interactions" section
+  documents this.
+
+### Cleanup
+
+- Removed the dead **"Show throws to hidden-viewer players"** setting
+  that was registered but never wired up to any code.
+- Updated README with verified DSN 6.2.x compatibility note and the
+  Guardian compatibility section.
+
 ## 0.4.6 — Persistent-dice leak fixes + RNG Guardian compatibility
 
 ### Fixed: residual dice on canvas during play
