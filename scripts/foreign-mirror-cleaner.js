@@ -66,11 +66,14 @@ export function startForeignMirrorCleaner() {
   try { sweepForeignTaskDice(); } catch {}
   // Centralized prune for `removedRecently` — single interval instead of
   // per-entry setTimeout. Same pattern as socket.js's pruneSocketCaches.
-  setInterval(() => {
-    const now = Date.now();
-    for (const [id, expiry] of removedRecently) {
-      if (expiry <= now) removedRecently.delete(id);
-    }
-  }, 2000);
+  // Guarded against double-registration via a global flag.
+  if (!globalThis.__dsnBridgeForeignCleanerPrune) {
+    globalThis.__dsnBridgeForeignCleanerPrune = setInterval(() => {
+      const now = Date.now();
+      for (const [id, expiry] of removedRecently) {
+        if (expiry <= now) removedRecently.delete(id);
+      }
+    }, 2000);
+  }
   log("hidden-viewer skip-on-receive registered");
 }

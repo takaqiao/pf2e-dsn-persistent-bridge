@@ -4,6 +4,38 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.8 — 2026-05-04
+
+Second-pass 8-agent audit caught a handful of edge cases the 0.4.6 / 0.4.7 fixes left:
+
+### Fixed
+
+- **`socket.applyFlavoredAppearance` re-spawn lost bridge tags.** The remove+respawn cycle gave the new mesh fresh `userData` with only `_flavorApplied` set — losing `_owned`, `_dialogId`, and `_openerUserId`. `sweepOrphanTaskDice`'s `_owned !== true` shortcut then skipped it. After opener disconnect, the mesh became a permanent orphan on the receiver. Snapshot the bridge tags from the old mesh before remove (lines 391-398 in socket.js); re-apply to the new mesh after spawn (lines 437-444). Also preserves `_secretMirror` if applicable. Closes the only path where flavor-sync produced sweep-invisible meshes.
+
+- **`Hooks.on("userConnected", (user, connected) => {...})` registered in main.js ready.** On any user disconnect, all clients now run `sweepOrphanTaskDice()` immediately. Previously, receivers had to wait up to 5 min for the periodic sweep to clean foreign task dice from a disconnected opener. Closes the Scenario E "opener disconnects mid-dialog" gap to "within seconds" instead of "within 5 minutes".
+
+- **`setInterval` double-registration guards** in three places: main.js periodic sweep (`globalThis.__dsnBridgePeriodicSweep`), socket.js pruneSocketCaches (`__dsnBridgeSocketPrune`), foreign-mirror-cleaner.js (`__dsnBridgeForeignCleanerPrune`). If module init runs twice for any reason (re-import in a reload-without-refresh flow), duplicates skipped instead of stacking timers.
+
+- **`applyTaskMarkSync` rejects unknown openerUserId.** Previously, a malicious or buggy client could emit a `task-mark` payload with a bogus userId; the receiver tagged the mesh; the next sweep saw `game.users.get(bogusId)?.active` as falsy and removed the mesh. Now rejects the mark with a `warn()` log if `game.users.get(openerUserId)` is null. Low-severity surface area (bridge meshes only) but trivial to fix.
+
+- **`spawn-helper.js` local opener spawn now tags `_openerUserId = game.user.id`.** Previously, only receiver-side meshes (mirror + task-mark) carried this tag; local meshes relied on absence to mean "local". Sweep logic `(openerId && openerId !== myId)` still works (absence short-circuits the `&&`), but the schema is now consistent across all bridge-owned meshes — every one has `_owned + _dialogId + _openerUserId`. Defensive: any future code that needs the opener identity won't have to special-case local spawns.
+
+- **`game.user` null guards.** Four files patched: `matcher.ownerEligible` → `game.user?.id`; `evaluate-wrapper.evalWrapper` → captures `userId` once, early-returns if null; `reroll-handler.onPreReroll` → captures `userId` before PendingQueue.push; `perf-preset.applyPreset` → re-checks `game.user` after the implicit await chain (could be nulled by transient disconnect race between the initial check and `setFlag`). Defensive against Foundry's brief connection-state churn during rapid reconnections.
+
+- **Guardian CONFIG.queries wrap gated on `game.user?.isGM`.** Guardian's libWrapper only routes verification queries to `game.users.activeGM`, so wrapping on non-GM clients was dead code. Now only registers on the GM client. Cleaner + forward-compat in case Guardian changes its routing.
+
+### Audit findings deferred / accepted as-is
+
+- **Scenario D race** (foreign-mirror-cleaner removes a foreign broadcast die under visibility=mine before the `task-mark` socket arrives — mark queues with no mesh, TTL-prunes 30s later): Agent flagged but the practical impact is zero — the mesh was already removed locally. The orphaned `pendingTaskMarks` entry costs ~80 bytes for 30s.
+
+- **`emitTaskMarkSync` per-die overhead** (10 dice = 10 socket messages): Agent flagged as perf concern. Not measurable at typical scale (< 10 dice per roll, < 1 roll/sec). Could batch into one message if it ever becomes an issue.
+
+- **`_resetPreRollState` undocumented internal call**: Agent flagged DSN's private method. Already wrapped in try/catch with warn() — if it ever breaks, we'll see it. Not worth refactoring around private API churn we don't control.
+
+- **`setInterval` not cleared on module disable**: Agent flagged resource leak on mid-session module-toggle. Foundry sessions don't typically toggle modules mid-game, and `isEnabled()` guard makes the timer no-op. Acceptable.
+
+- **`perf-preset.getCurrentPreset` compares 4 of 8 profile fields**: Agent flagged as cosmetic (button shows "custom" more often than necessary). Pre-existing 0.3.x behavior, not a regression. Defer.
+
 ## 0.4.7 — 2026-05-04
 
 ### Bug fixes — second pass (medium/low audit findings from 0.4.6 deferral)

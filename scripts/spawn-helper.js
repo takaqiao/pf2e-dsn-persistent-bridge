@@ -432,6 +432,13 @@ export async function spawnTaskDiceForStore(store) {
       // dice, the slot value will be marked `hidden` so the player's
       // tray doesn't display it.
       mesh.userData.dsnPF2eBridge_owned = true;
+      // Consistent tag schema with receiver-side (mirror / task-mark)
+      // meshes: every bridge-owned mesh carries `_openerUserId` of who
+      // initiated the spawn. sweepOrphanTaskDice uses
+      // `_openerUserId === game.user.id` as the local-vs-foreign branch
+      // determinant; absence of this tag is a defensive bug rather than
+      // a correctness signal.
+      mesh.userData.dsnPF2eBridge_openerUserId = game.user?.id ?? null;
       // Stash the damage type so the task-mirror-throw flow (hidden-viewer
       // ephemeral animation) can replay this die with the receiver's per-
       // type colorset, even though the persistent mesh was already cleaned.

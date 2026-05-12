@@ -67,7 +67,14 @@ export function installEvaluateWrapper() {
 }
 
 async function evalWrapper(wrapped, ...args) {
-  const pending = PendingQueue.peek(game.user.id);
+  const userId = game.user?.id;
+  if (!userId) {
+    // Defensive: no user means no pending queue lookup is meaningful.
+    // Foundry shouldn't fire roll evaluations pre-ready, but guard so
+    // a transient disconnect race doesn't crash here.
+    return wrapped(...args);
+  }
+  const pending = PendingQueue.peek(userId);
   if (!pending) {
     log("eval: no pending DSN values, passthrough", { rollClass: this.constructor?.name, formula: this.formula });
     return wrapped(...args);
@@ -82,7 +89,7 @@ async function evalWrapper(wrapped, ...args) {
     if (!byFaces.has(p.faces)) byFaces.set(p.faces, []);
     byFaces.get(p.faces).push(p.value);
   }
-  PendingQueue.pop(game.user.id);
+  PendingQueue.pop(userId);
 
   if (byFaces.size === 0) return wrapped(...args);
 

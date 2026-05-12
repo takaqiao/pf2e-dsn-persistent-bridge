@@ -4,6 +4,32 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.8 — Second-pass audit fixes
+
+A second round of multi-agent code review caught a handful of edge cases
+the 0.4.6 / 0.4.7 fixes didn't fully cover:
+
+- **Flavored re-spawn was losing its bridge tags.** When the receiver
+  swapped colors for a flavored damage die, the re-spawned mesh kept
+  none of our identification tags — so a later orphan sweep would skip
+  it as "unowned". If the opener disconnected after the color swap,
+  that mesh stayed on the receiver's canvas forever. Now re-tagged.
+- **Faster sweep on disconnect.** When any user goes offline, all
+  receivers now immediately sweep their foreign task dice instead of
+  waiting up to 5 minutes for the periodic sweep.
+- **Guards against double-registration** of the periodic sweep timer
+  and the socket TTL pruner if module init runs twice for any reason.
+- **Bogus `task-mark` socket messages** with unknown user IDs are now
+  rejected. Previously could've been used to forcibly clean other
+  players' dice.
+- **More null-safe** `game.user` access in matcher / evaluate-wrapper /
+  reroll-handler / perf-preset. Defensive against rapid reconnection
+  races.
+- **RNG Guardian per-roll wrap** now only registers on the GM client
+  (non-GMs never receive that query anyway).
+
+No new features; entirely cleanup of edge cases the audit surfaced.
+
 ## 0.4.7 — More leak protection + Guardian per-roll bypass
 
 ### Fixed: more dice-leak edge cases

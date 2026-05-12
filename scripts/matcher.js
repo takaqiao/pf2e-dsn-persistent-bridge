@@ -37,5 +37,5 @@ export function dispatchDie(die) {
  * incompatible with secret-roll handling, so it was removed.
  */
 export function ownerEligible(ownerUserId) {
-  return ownerUserId === game.user.id;
+  return ownerUserId === game.user?.id;
 }
