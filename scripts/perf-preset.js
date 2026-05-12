@@ -138,6 +138,10 @@ async function applyPreset(name) {
   const cur = readDsnSettingsFlag() ?? {};
   const merged = { ...cur, ...profile };
   try {
+    // Re-check game.user after the implicit await chain — a transient
+    // disconnect race could null it out between the check above and the
+    // setFlag call.
+    if (!game.user) return;
     await game.user.setFlag("dice-so-nice", "settings", merged);
   } catch (e) {
     warn("applyPreset: failed to write DSN flag", e);

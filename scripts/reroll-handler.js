@@ -22,7 +22,9 @@ export function onPreReroll(_oldRoll, unevaluatedNewRoll /* , resource, options 
       return;
     }
 
-    PendingQueue.push(game.user.id, harvested, "reroll");
+    const userId = game.user?.id;
+    if (!userId) return; // defensive: no user means no queue
+    PendingQueue.push(userId, harvested, "reroll");
     log("reroll: pushed predetermined values from canvas:", harvested);
 
     // Always nuke the spent meshes from canvas — they're tagged

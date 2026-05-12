@@ -62,11 +62,26 @@ Hooks.once("ready", () => {
   // (manual). Set to every 5 minutes — long enough to be free; short
   // enough that a stuck mesh doesn't linger an entire session. Quiet
   // when there's nothing to do (sweep only logs if it removes anything).
-  setInterval(() => {
-    if (!isEnabled()) return;
-    if (!game.dice3d) return;
-    try { sweepOrphanTaskDice(); } catch (e) { warn("periodic orphan sweep failed", e); }
-  }, 5 * 60 * 1000);
+  //
+  // Guard against re-registration: Foundry's `Hooks.once("ready", ...)`
+  // is single-shot, but if module init runs twice for any reason (re-
+  // import in a reload-without-refresh flow) we'd double up the timer.
+  if (!globalThis.__dsnBridgePeriodicSweep) {
+    globalThis.__dsnBridgePeriodicSweep = setInterval(() => {
+      if (!isEnabled()) return;
+      if (!game.dice3d) return;
+      try { sweepOrphanTaskDice(); } catch (e) { warn("periodic orphan sweep failed", e); }
+    }, 5 * 60 * 1000);
+  }
+  // Also sweep immediately when any user disconnects — receivers can
+  // clean their foreign-broadcast task dice from the now-offline
+  // opener without waiting up to 5 min for the periodic sweep. Foundry
+  // fires `userConnected(user, connected)` on every connection change.
+  Hooks.on("userConnected", (user, connected) => {
+    if (connected) return; // only react to disconnects
+    if (!isEnabled() || !game.dice3d) return;
+    try { sweepOrphanTaskDice(); } catch (e) { warn("disconnect-triggered sweep failed", e); }
+  });
   // Receiver-side cleanup: when our visibility is "mine" / "none", remove
   // foreign task dice as soon as they've settled, so post-throw idle on
   // hidden-viewer clients drops to ~200 ms instead of "until opener closes

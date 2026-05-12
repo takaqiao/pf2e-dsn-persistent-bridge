@@ -61,28 +61,32 @@ export async function checkAndConfigureGuardian() {
   // Per-roll bypass: wrap Guardian's CONFIG.queries verification entry so
   // bridge-sourced rolls (carrying `roll.options._dsnPersistentSourced`)
   // skip verification even if they aren't in the class-level ignore
-  // list. Only covers the query-based cross-client verification path;
-  // active-GM-local createChatMessage path still relies on ignoredRolls.
+  // list. Only the active GM actually RECEIVES these queries (Guardian's
+  // libWrapper sends from non-GMs to `game.users.activeGM`), so wrapping
+  // on non-GM clients is dead code. Gate on isGM for cleanliness +
+  // forward-compat (in case Guardian changes its query routing).
   // Idempotent via _dsnBridgeWrapped sentinel.
-  try {
-    const queryKey = `${GUARDIAN_ID}.checkRoll`;
-    const origQuery = CONFIG.queries?.[queryKey];
-    if (origQuery && !origQuery._dsnBridgeWrapped) {
-      const wrapped = async function (args) {
-        if (args?.roll?.options?._dsnPersistentSourced === true) {
-          // Bridge-injected roll — values are predetermined from
-          // physical dice, Guardian's PCG verification would always
-          // fail. Skip cleanly.
-          return;
-        }
-        return origQuery(args);
-      };
-      wrapped._dsnBridgeWrapped = true;
-      CONFIG.queries[queryKey] = wrapped;
-      log("Guardian compat: wrapped CONFIG.queries[rng-guardian.checkRoll] for per-roll bypass");
+  if (game.user?.isGM) {
+    try {
+      const queryKey = `${GUARDIAN_ID}.checkRoll`;
+      const origQuery = CONFIG.queries?.[queryKey];
+      if (origQuery && !origQuery._dsnBridgeWrapped) {
+        const wrapped = async function (args) {
+          if (args?.roll?.options?._dsnPersistentSourced === true) {
+            // Bridge-injected roll — values are predetermined from
+            // physical dice, Guardian's PCG verification would always
+            // fail. Skip cleanly.
+            return;
+          }
+          return origQuery(args);
+        };
+        wrapped._dsnBridgeWrapped = true;
+        CONFIG.queries[queryKey] = wrapped;
+        log("Guardian compat: wrapped CONFIG.queries[rng-guardian.checkRoll] for per-roll bypass");
+      }
+    } catch (e) {
+      warn("Guardian compat: failed to wrap CONFIG.queries", e);
     }
-  } catch (e) {
-    warn("Guardian compat: failed to wrap CONFIG.queries", e);
   }
 
   // The `ignoredRolls` setting is world-scoped — only GM can write it.

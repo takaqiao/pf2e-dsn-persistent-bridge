@@ -37,7 +37,10 @@ export function registerSocket() {
   // than per-entry setTimeout: avoids unbounded timer count if cleanup
   // events arrive faster than their individual TTLs (was an unbounded-
   // growth risk in 0.4.x for tables with rapid-fire secret rolls).
-  setInterval(pruneSocketCaches, 2000);
+  // Guarded against double-registration via a global flag.
+  if (!globalThis.__dsnBridgeSocketPrune) {
+    globalThis.__dsnBridgeSocketPrune = setInterval(pruneSocketCaches, 2000);
+  }
   log("socket registered:", SOCKET_NAME);
 }
 
@@ -387,12 +390,20 @@ async function applyFlavoredAppearance(mesh, flavor) {
     texture: typeof appearance.texture === "object" ? appearance.texture?.name : appearance.texture,
   });
 
-  // Snapshot mesh state for re-spawn.
+  // Snapshot mesh state for re-spawn — including our bridge tags. The
+  // remove-respawn cycle below produces a fresh mesh without our custom
+  // userData, so without re-applying these tags after spawn the new mesh
+  // would have `dsnPF2eBridge_owned !== true` and `sweepOrphanTaskDice`
+  // would skip it. If the opener then disconnected, the mesh would be a
+  // permanent orphan on this receiver.
   const persistentId = mesh.userData.persistentId;
   const ownerUserId = mesh.userData.ownerUserId;
   const linkGroupId = mesh.userData.linkGroupId;
   const linkGroupSecondary = mesh.userData.linkGroupSecondary;
   const digitPlace = mesh.userData.digitPlace;
+  const bridgeDialogId = mesh.userData.dsnPF2eBridge_dialogId ?? null;
+  const bridgeOpenerUserId = mesh.userData.dsnPF2eBridge_openerUserId ?? ownerUserId ?? null;
+  const bridgeWasSecretMirror = mesh.userData.dsnPF2eBridge_secretMirror === true;
   // Approximate canvas-percent position from the mesh's current world
   // position so the re-spawned mesh appears in the same spot.
   const pos = (() => {
@@ -430,10 +441,19 @@ async function applyFlavoredAppearance(mesh, flavor) {
       _dsnBridgeAllowed: true,
     }, false); // synchronize=false: local-only re-spawn
 
-    // Tag the new mesh so we don't reapply on re-flush of stale pending.
+    // Tag the new mesh: bridge identification tags (so orphan sweep can
+    // find this re-spawned mesh on later disconnect) + the
+    // `_flavorApplied` marker so we don't re-apply on re-flush of stale
+    // pending.
     const list = game.dice3d?.box?.persistentDiceList ?? [];
     const newMesh = list.find((m) => m?.userData?.persistentId === persistentId);
-    if (newMesh?.userData) newMesh.userData.dsnPF2eBridge_flavorApplied = flavor;
+    if (newMesh?.userData) {
+      newMesh.userData.dsnPF2eBridge_owned = true;
+      newMesh.userData.dsnPF2eBridge_dialogId = bridgeDialogId;
+      newMesh.userData.dsnPF2eBridge_openerUserId = bridgeOpenerUserId;
+      if (bridgeWasSecretMirror) newMesh.userData.dsnPF2eBridge_secretMirror = true;
+      newMesh.userData.dsnPF2eBridge_flavorApplied = flavor;
+    }
 
     flavorDiag(`apply: re-spawned ${dieType} (id=${persistentId}) with ${flavor} colorset`);
   } catch (e) {
@@ -495,6 +515,15 @@ function applyTaskMarkSync(payload) {
   const { persistentId, dialogId, openerUserId } = payload || {};
   if (!persistentId) return;
   if (openerUserId === game.user?.id) return; // we are the opener; our local spawn already tagged
+  // Validate openerUserId against the user list. A malicious or buggy
+  // client could emit a `task-mark` with a bogus userId; an unknown id
+  // would make `game.users.get(id)?.active` always falsy, causing the
+  // mesh to be eligible for sweep prematurely. Reject unknown ids so
+  // the tag mechanism isn't exploitable for forced cleanup.
+  if (!openerUserId || !game.users?.get(openerUserId)) {
+    warn(`applyTaskMarkSync: rejecting mark with unknown openerUserId='${openerUserId}'`);
+    return;
+  }
   const list = game.dice3d?.box?.persistentDiceList ?? [];
   const mesh = list.find((m) => m?.userData?.persistentId === persistentId);
   if (!mesh) {
