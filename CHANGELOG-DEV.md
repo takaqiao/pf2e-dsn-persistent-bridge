@@ -4,6 +4,34 @@ Verbose technical history — implementation details, code references, race
 conditions, and design reasoning kept for debugging and reference. The
 user-facing summary lives in `CHANGELOG.md`.
 
+## 0.4.9 — 2026-05-04
+
+Third 8-agent re-audit. Key verifications + minor polish.
+
+### Audit verified-clean (no fix needed)
+
+- **`userConnected` hook name + signature** — Confirmed via storyframe / sundry modules using identical pattern. `(user, connected)` signature; `connected=true` on login, `false` on disconnect. Bridge handler in main.js correctly skips connect events.
+- **Flavored re-spawn tag fix** — Snapshot-and-reapply pattern is correct. The `bridgeOpenerUserId ?? ownerUserId ?? null` fallback chain handles all realistic states. Defensive `_secretMirror` preservation is for an impossible-in-practice case (flavor-sync isn't fired on secret mirrors) but harmless.
+- **Sweep logic state matrix** — All 10 possible mesh state combinations produce correct sweep decisions. Branch order (`_secretMirror || foreign-openerUserId` checked before `dialogId` membership) correctly prioritizes opener-online status over local dialog set.
+- **Integration ordering** — All install* / register* call preconditions are met. DSN late-init coverage complete across 5 patches.
+- **Multi-hook ordering** — `persistentDiceChanged` listeners (flushPendingLocks, flushPendingFlavorSync, flushPendingTaskMarks, sweepForeignTaskDice) are independent + commutative.
+
+### Minor real findings — fixed
+
+- **`slot-extractor.slotsFromButtonText`** regex `/(\d+)\s*d\s*(\d+)/gi` had no upper bounds on parsed values. "999d999" in malformed button text would spawn 999 dice. Added: `n in [1, 50] && f in [2, 100]` else skip the match. PF2e's realistic max is ~50 dice; d100 is the largest face count.
+- **`socket.applyMirrorCleanup`** iterated `payload.persistentIds` without size limit. Added `MIRROR_CLEANUP_MAX_IDS = 100` cap with `slice + warn` log. Defensive against pathological broadcast payloads.
+- **`socket.applyLock` / `applyMirror` / `applyTaskFlavorSync`** had implicit truthiness checks on required fields. Replaced with explicit `typeof === "string" && value` checks so non-string or null fields are rejected early instead of producing odd downstream behavior.
+- **`ephemeral-mirror.applyMirrorThrow`** accepted unbounded `mirrors` array. Added validation + 100-cap.
+- **`main.api.diagnoseTaskDice`** didn't report the new 0.4.6+ bridge tags. Added fields: `bridgeDialogId`, `bridgeOpenerUserId`, `bridgeOpenerLocal` (computed bool — is this opener us?), `bridgeOpenerOnline` (computed bool — opener active?), `bridgeSecretMirror`. Lets users inspect sweep decisions in console.
+- **`welcome.maybeShowWelcome`** captured `userId` once at function entry, used the local instead of repeated `game.user.id` accesses. Re-checks `game.user` after the `await ChatMessage.create` chain before calling `setFlag`. Defensive against rare reconnection races.
+
+### Audit findings deferred / accepted as-is
+
+- **Foundry socket sender authentication**: `game.socket.on` callbacks receive only `(payload)`, no sender userId. Foundry's socket layer authenticates the underlying socket.io connection but doesn't expose sender provenance to module handlers. Modules trust the `userId` field in their own payloads (as DSN, pf2e-subsystems, pointer all do). The new `applyTaskMarkSync` `game.users.get(openerUserId)` existence check is the strongest verification available without Foundry-side support.
+- **`PendingQueue` lazy TTL is sufficient**: Map keyed by `userId` is bounded by `game.users.size` (typically <10). One stale entry per user max. No need for periodic prune.
+- **`SlotStore.subscribers` aggregated errors**: Each subscriber failure is currently logged via console.error individually. Aggregating into a single log per notify is a code-style preference, not a correctness issue.
+- **`perf-preset.getCurrentPreset` 4-of-8 field compare** (returns "custom" more often than strictly needed): Pre-existing 0.3.x behavior, purely cosmetic.
+
 ## 0.4.8 — 2026-05-04
 
 Second-pass 8-agent audit caught a handful of edge cases the 0.4.6 / 0.4.7 fixes left:
