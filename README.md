@@ -62,7 +62,7 @@ https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest/download/
 
 ### Verified compatible
 
-- **Dice So Nice** 6.2.0 and 6.2.1 — full feature parity, including the new spawn-area preference setting (the bridge passes explicit positions, so DSN's setting doesn't override).
+- **Dice So Nice** 6.2.0 through 6.2.4 — full feature parity. Verified by source-level diff of the DSN internals the bridge depends on (InputHandler, persistentDiceManager, Dice3D.spawnPersistentDie, the visibility filter): unchanged across 6.2.2–6.2.4 (those releases only added PBR materials, atlas packing, and GLB fixes — all additive). The bridge passes explicit spawn positions, so DSN's spawn-area preference setting doesn't override them.
 - **PF2e system** through v8.x. Dialogs are still V1 Applications (`foundry.appv1.api.Application`), so the bridge's render / close hooks fire normally.
 - **PF2e Dice Flavor Fix** — bridge auto-detects it and skips registering its own duplicate colorsets.
 

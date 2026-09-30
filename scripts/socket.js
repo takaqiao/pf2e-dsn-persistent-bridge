@@ -583,7 +583,9 @@ function onSocketMessage(payload) {
       applyLock(payload.persistentId, payload.lockedBy);
       break;
     case "mirror":
-      applyMirror(payload);
+      // async — guard so a peer payload can't surface as an unhandled
+      // rejection (applyMirror also try/catches internally, belt-and-braces).
+      Promise.resolve(applyMirror(payload)).catch((e) => warn("applyMirror failed", e));
       break;
     case "mirror-cleanup":
       applyMirrorCleanup(payload);
@@ -592,7 +594,10 @@ function onSocketMessage(payload) {
       applyMirrorThrow(payload);
       break;
     case "task-flavor-sync":
-      applyTaskFlavorSync(payload);
+      // async — applyFlavoredAppearance can throw before its own try/catch
+      // (appearance build sits outside it); catch here so it doesn't become
+      // an unhandled rejection and silently drop the flavor swap.
+      Promise.resolve(applyTaskFlavorSync(payload)).catch((e) => warn("applyTaskFlavorSync failed", e));
       break;
     case "task-mark":
       applyTaskMarkSync(payload);

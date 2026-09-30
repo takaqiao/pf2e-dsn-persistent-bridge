@@ -115,6 +115,14 @@ async function injectTray(app, $html) {
       // timer fired). The new shape's slots are all empty, so the next fill
       // wave should be free to auto-submit.
       delete store._autoSubmitted;
+      // Cancel any pending auto-submit timer armed by the OLD (all-filled)
+      // shape — otherwise it fires triggerSubmit against the new all-empty
+      // shape, submitting before the user throws the newly added die (which
+      // then rolls via RNG fallback). Mirrors the clear in onCloseDialog.
+      if (store._autoSubmitTimer) {
+        clearTimeout(store._autoSubmitTimer);
+        store._autoSubmitTimer = null;
+      }
       // Re-spawn for the new shape on the next tick
       spawnTaskDiceForStore(store).catch((e) => err("respawn failed", e));
     } else if (isFresh && descriptors.length > 0) {
@@ -337,6 +345,12 @@ function bindMessageModeWatcher(root, store, app) {
         state: "empty", value: null, sourceMeshId: null,
       }));
       delete store._autoSubmitted;
+      // Cancel a pending auto-submit timer from the prior mode's fill state
+      // (same reason as the slotsShapeChanged branch).
+      if (store._autoSubmitTimer) {
+        clearTimeout(store._autoSubmitTimer);
+        store._autoSubmitTimer = null;
+      }
       await spawnTaskDiceForStore(store);
       store.notify();
     } catch (e) {

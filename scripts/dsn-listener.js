@@ -273,6 +273,11 @@ function handleMesh(mesh) {
     value: finalValue,
     ownerUserId,
     meshId: mesh.userData?.persistentId,
+    // The dialog this die was spawned for. dispatchDie uses it to confine
+    // the die to its own dialog's slots — without it, a die already placed
+    // in dialog A's slot could be re-matched into a second open dialog B's
+    // same-faces empty slot when clearConsumedFlags re-opens the scan.
+    dialogId: mesh.userData?.dsnPF2eBridge_dialogId ?? null,
   };
 
   const consumed = dispatchDie(die);

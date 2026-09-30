@@ -1,4 +1,4 @@
-import { log, warn } from "./constants.js";
+import { log } from "./constants.js";
 
 /**
  * DSN's persistent-dice visibility filter has three modes:
@@ -15,6 +15,16 @@ import { log, warn } from "./constants.js";
  * when DSN visibility=none. We patch DSN's per-die visibility application
  * to skip meshes we've tagged force-visible. The patch is local; only the
  * opener tags their meshes, so other clients' filters work normally.
+ *
+ * The patch goes on the PROTOTYPE (not the live instance) with a sentinel,
+ * for the same reason as the InputHandler patches: DSN's `resizeAndRebuild`
+ * (window resize, perf-preset change) calls `_buildDiceBox()` which builds a
+ * fresh `new PersistentDiceManager(...)`. An instance patch is lost on every
+ * rebuild; a prototype patch is inherited by all current and future managers.
+ * We also defer to `diceSoNiceReady` when the manager isn't constructed yet,
+ * matching the right-click / shake / restrict-spawn installers — at our own
+ * `ready` time DSN hasn't built its box/manager yet, so an eager install
+ * would otherwise silently no-op forever.
  */
 
 let installed = false;
@@ -30,18 +40,28 @@ export function installVisibilityPatch() {
   if (installed) return;
   const pdm = game?.dice3d?.box?.persistentDiceManager;
   if (!pdm || typeof pdm._applyPersistentDieVisibility !== "function") {
-    warn("visibility patch: persistentDiceManager not ready, skipping");
+    // Manager not built yet — defer to DSN's ready signal and retry, exactly
+    // like the other DSN patches. Without this the patch never installs on a
+    // normal load (DSN builds its box asynchronously after our ready hook).
+    log("visibility patch: persistentDiceManager not ready, deferring to diceSoNiceReady");
+    Hooks.once("diceSoNiceReady", () => installVisibilityPatch());
     return;
   }
-  const orig = pdm._applyPersistentDieVisibility.bind(pdm);
-  pdm._applyPersistentDieVisibility = function (mesh) {
+  const proto = Object.getPrototypeOf(pdm);
+  if (!proto || proto._dsnBridgeVisibilityPatched) {
+    installed = true;
+    return;
+  }
+  proto._dsnBridgeVisibilityPatched = true;
+  const orig = proto._applyPersistentDieVisibility;
+  proto._applyPersistentDieVisibility = function (mesh) {
     if (mesh?.userData?.dsnPF2eBridge_forceVisible === true) {
       const parent = mesh.parent;
       if (parent) parent.visible = true;
       return;
     }
-    return orig(mesh);
+    return orig.call(this, mesh);
   };
   installed = true;
-  log("visibility patch installed");
+  log("visibility patch installed (prototype-patched, survives box rebuilds)");
 }

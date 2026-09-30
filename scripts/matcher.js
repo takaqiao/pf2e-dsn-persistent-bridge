@@ -14,6 +14,12 @@ export function dispatchDie(die) {
   if (stores.length === 0) return false;
 
   for (const store of stores) {
+    // If the die was spawned for a specific dialog, never let it fill a
+    // DIFFERENT dialog's slot. A bridge task die always carries dialogId;
+    // restricting here prevents cross-dialog leakage when the same user has
+    // two roll dialogs open with same-faces empty slots and the global
+    // clearConsumedFlags re-opens an already-placed die to re-scanning.
+    if (die.dialogId != null && store.dialogId !== die.dialogId) continue;
     const slot = store.acceptResult(die);
     if (slot) {
       log("matched die →", {

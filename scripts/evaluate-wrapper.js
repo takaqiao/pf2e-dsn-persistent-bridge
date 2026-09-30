@@ -162,57 +162,46 @@ function patchDice(dice, byFaces) {
   for (const term of dice) {
     const queue = byFaces.get(term.faces);
     if (!queue || queue.length === 0) continue;
+    if (typeof term.roll !== "function") continue;
 
-    // Foundry v13/v14 has TWO entry points worth covering:
-    //   - `_roll(n)` returning an array of {result, active}
-    //   - older `roll({minimize,maximize})` returning a single {result, active}
-    //     (and pushing into this.results internally)
-    // We patch BOTH so we don't depend on which one the runtime calls.
-    const restoreRoll = patchMethod(term, "_roll", function (n) {
-      const out = [];
-      for (let i = 0; i < n; i++) {
-        out.push(takeFromQueueOrFallback(queue, this, "_roll"));
+    // Patch ONLY `roll` — the actual evaluation entry point in Foundry
+    // v13/v14. `DiceTerm#roll(options)` produces one result object, pushes
+    // it into `this.results` itself, and returns it; the term is driven
+    // exclusively through `roll()` during evaluation. (Confirmed in
+    // production: injected faces land correctly, which is only possible if
+    // `roll` is the entry point and self-pushes — so we mirror that.)
+    //
+    // We deliberately DO NOT patch `_roll`. The previous dual-patch assumed
+    // `_roll(n)` took a count and returned an array of {result,active}; the
+    // real signature is `_roll(options)` returning a single number. On the
+    // RNG-fallback path the patched `roll` delegated to the original `roll`,
+    // which calls `this._roll(options)` internally — hitting the wrong-arity
+    // patched `_roll` (`for (i=0; i<options; i++)` → `0 < {}` → `[]`),
+    // corrupting the result to 0/NaN AND then pushing a second time (double
+    // push inflated results.length, breaking kh/kl/count and under-rolling
+    // remaining dice). Patching only `roll` and letting the original `roll`
+    // use the untouched `_roll` for fallback fixes both the corruption and
+    // the double-push. Injection is unchanged from the prior working path.
+    const hadOwn = Object.prototype.hasOwnProperty.call(term, "roll");
+    const originalRoll = term.roll.bind(term);
+    term.roll = function (options = {}) {
+      if (queue.length > 0) {
+        // Inject a predetermined face: build the result object and push it
+        // ourselves exactly once, mirroring DiceTerm#roll's own contract.
+        const o = { result: queue.shift(), active: true };
+        this.results.push(o);
+        return o;
       }
-      return out;
+      // Queue exhausted (partial-fill submit, or a modifier-driven extra
+      // roll such as reroll `r` / explode `x`/`xo`): defer to the genuine
+      // original roll. It performs a real RNG roll AND pushes its own
+      // result, so we return it directly and must NOT push again.
+      return originalRoll(options);
+    };
+    restore.push(() => {
+      if (hadOwn) term.roll = originalRoll;
+      else delete term.roll;
     });
-    const restoreSingle = patchMethod(term, "roll", function (opts = {}) {
-      const obj = takeFromQueueOrFallback(queue, this, "roll", opts);
-      this.results.push(obj);
-      return obj;
-    });
-    if (restoreRoll) restore.push(restoreRoll);
-    if (restoreSingle) restore.push(restoreSingle);
   }
   return restore;
-}
-
-function patchMethod(term, methodName, replacement) {
-  if (typeof term[methodName] !== "function") return null;
-  const had = Object.prototype.hasOwnProperty.call(term, methodName);
-  const original = term[methodName].bind(term);
-  // Stash the bound original on the replacement so it can fall back to RNG.
-  replacement.__dsnOriginal = original;
-  term[methodName] = replacement;
-  return () => {
-    if (had) term[methodName] = original;
-    else delete term[methodName];
-  };
-}
-
-function takeFromQueueOrFallback(queue, term, kind, opts) {
-  if (queue.length > 0) {
-    return { result: queue.shift(), active: true };
-  }
-  // fall back to genuine RNG via the saved original
-  const orig = term[kind]?.__dsnOriginal;
-  if (typeof orig === "function") {
-    const r = kind === "_roll" ? orig(1) : orig(opts);
-    if (Array.isArray(r)) return r[0] ?? { result: 1, active: true };
-    return r ?? { result: 1, active: true };
-  }
-  // last-ditch: plain randomFace if the term exposes it
-  if (typeof term.randomFace === "function") {
-    return { result: term.randomFace(), active: true };
-  }
-  return { result: 1, active: true };
 }

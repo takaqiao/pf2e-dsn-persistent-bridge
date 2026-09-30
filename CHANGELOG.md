@@ -4,6 +4,35 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.4.10 — Deep audit: result-corruption fix + visibility patch repair
+
+A full multi-agent source-level audit (against DSN 6.2.4) surfaced several
+real bugs, including one that could silently produce wrong dice totals.
+
+- **Fixed (important): RNG-fallback rolls could come out wrong.** When some
+  dice were thrown physically and the rest fell back to random — partial
+  fills, or extra dice from reroll / exploding-die effects — the fallback
+  dice could resolve to 0 and corrupt the total (and break keep-highest /
+  keep-lowest). Physically-thrown values were always correct; only the
+  random-fallback portion was affected. Now fixed; the common "throw every
+  die" flow was never impacted.
+- **Fixed: dice could go invisible after resizing the window.** If you use
+  DSN's "show only mine" / "hide all" visibility, the bridge's keep-my-dice-
+  visible patch was being lost whenever DSN rebuilt its dice box (window
+  resize, performance-preset change), and in many cases never installed at
+  all. Now installed durably so your task dice stay visible.
+- **Fixed: a queued auto-submit could fire after you add a die.** If you
+  raised the auto-submit delay and then added a die after the others
+  settled, the pending submit is now cancelled instead of rolling the new
+  die via RNG.
+- **Fixed: two roll dialogs open at once no longer cross-feed dice.** A die
+  placed in one dialog can no longer leak into a second open dialog's
+  matching empty slot.
+- **Hardened:** cross-client flavor-sync errors are caught instead of
+  becoming silent console rejections.
+- **Verified compatible with Dice So Nice 6.2.4** (6.2.2–6.2.4 changed
+  nothing the bridge depends on).
+
 ## 0.4.9 — Third-pass audit polish
 
 Third multi-agent re-audit confirmed the 0.4.6–0.4.8 fixes hold up. A
