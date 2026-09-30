@@ -30,3 +30,17 @@ test('native partial submit consumes landed slots and fills the rest with native
   await h.deliverLanding(token,18);assert.equal(h.submitCount,0);
   h.nativeSubmit();await h.flush();assert.deepEqual(h.lastRoll.dice[0].results.map(r=>r.result),[18,11]);
 });
+test('manual submit keeps confirmed values after removing landed task dice',async()=>{
+  const h=await makeBridgeHarness({autoSubmit:false}),s=h.openPublicCheck(),token=s.startBatch();
+  h.adapter.ownedCount=1;
+  await h.deliverLanding(token,18);
+  assert.equal(h.adapter.ownedCount,0);assert.equal(h.submitCount,0);
+  assert.equal(s.complete,true);
+  h.nativeSubmit();await h.flush();
+  assert.equal(h.lastRoll.dice[0].results[0].result,18);
+});
+test('Public as Character accepts the same physical path as Public as User',async()=>{
+  const h=await makeBridgeHarness(),s=h.openPublicCheck();h.setMessageMode('ic');
+  const token=s.startBatch();assert.ok(token);await h.deliverLanding(token,16);await h.flush();
+  assert.equal(h.lastRoll.dice[0].results[0].result,16);
+});

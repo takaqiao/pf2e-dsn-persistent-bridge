@@ -22,7 +22,7 @@ export function previewPositions(count) {
   for(let grid=Math.ceil(Math.sqrt(count));;grid++) {
     const spacing=1.3/grid,positions=[];
     for(let row=0;row<grid;row++) for(let col=0;col<grid;col++) {
-      const x=(col-(grid-1)/2)*spacing,z=(row-(grid-1)/2)*spacing,size=spacing*.32;
+      const x=(col-(grid-1)/2)*spacing,z=(row-(grid-1)/2)*spacing,size=Math.min(.14,spacing*.32);
       if(Math.hypot(x,z)+size<.81) positions.push({x,z,size});
     }
     if(positions.length>=count) return positions.slice(0,count);

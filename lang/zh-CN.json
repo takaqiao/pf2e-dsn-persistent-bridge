@@ -1,6 +1,6 @@
 {
   "PD": {
-    "Tray": "骰盘", "Private": "私密检定", "NativeOnly": "使用检定按钮", "NotSubmitted": "检定未提交，请使用检定按钮。",
+    "Tray": "骰盘", "Private": "私密检定", "NativeOnly": "使用检定按钮", "NotSubmitted": "检定未提交，请重新打开检定框。",
     "Settings": {
       "enabled": {"Name": "启用", "Hint": "显示骰盘。"},
       "traySize": {"Name": "骰盘尺寸", "Hint": "以像素为单位。"},

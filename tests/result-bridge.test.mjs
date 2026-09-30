@@ -5,6 +5,14 @@ import {describeDice} from '../scripts/descriptors.js';
 import {createSession} from '../scripts/session.js';
 import {makeDie,makeCheckRoll} from './fixtures/pf2e-rolls.mjs';
 const session=id=>createSession({id,appId:id,userId:'u',kind:'check',mode:'public',descriptors:[]});
+test('native CheckRoll type is the check category, not a damage flavor',async()=>{
+  const preview=makeCheckRoll(),roll=makeCheckRoll();
+  Object.defineProperty(roll,'type',{get:()=> 'skill-check'});
+  const descriptors=describeDice(preview),snapshot={id:'native-check',mode:'public',descriptors,
+    values:[{key:descriptors[0].key,value:13}]};
+  await evaluateWithSnapshot(roll,snapshot,()=>roll.evaluate(),[]);
+  assert.equal(roll.dice[0].results[0].result,13);
+});
 
 test('identical checks sharing original domains remain separate in reverse order',()=>{
   const bindings=createRollBindings(), domains=['skill-check'];

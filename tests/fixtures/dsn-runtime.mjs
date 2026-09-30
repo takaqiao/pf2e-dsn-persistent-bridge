@@ -2,7 +2,7 @@ export function deferred() {
   let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
   return {promise,resolve,reject};
 }
-export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,spawnWait=null}={}) {
+export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,spawnWait=null,remoteCreateWait=null}={}) {
   let id=0;
   const flags={appearance:{global:{diceColor:'#123456'}},saved:{appearance:true}};
   const user={id:'u',color:'#abcdef',getFlag:(scope,key)=>flags[key]};
@@ -69,7 +69,19 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
     getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})};
   runtime._buildDiceBox=function(){return this.box;};runtime._fadeOutCanvas=()=>{};
   runtime._cancelCanvasFade=()=>{};
+  runtime.pendingThrows={pending:new Map(),claimThrow(){return null;},refreshEligibility(){}};
   runtime.persistent={_persistentRoleContext:()=>({}),
+    async handleMessage(request){
+      runtime.remoteCreated??=new Set();runtime.remoteReplays??=[];
+      if(request.type==='persistent-create') {
+        if(remoteCreateWait) await remoteCreateWait.promise;
+        runtime.remoteCreated.add(request.data.persistentId);
+      } else if(request.type==='persistent-throw') {
+        for(const id of request.data.persistentIds) if(runtime.remoteCreated.has(id)) runtime.remoteReplays.push(id);
+      } else if(request.type==='persistent-remove') {
+        for(const id of request.data.persistentIds) runtime.remoteCreated.delete(id);
+      }
+    },
     async spawn(type,pct,opts,sync){
       runtime.spawnCalls.push({type,pct,opts,sync});
       if(spawnWait) await spawnWait.promise;

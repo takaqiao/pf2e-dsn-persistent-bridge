@@ -14,7 +14,7 @@ export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=global
   versions={},getMessageMode=()=>globalThis.game?.settings.get('core','messageMode')??'public'}) {
   const apps=new Map(),records=new Map(),snapshots=new Map();
   let adapter=null,tray=null,controller=null,uninstall=null,enabled=false,enabling=null,active=null;
-  const modeOf=app=>app.context?.messageMode??getMessageMode();
+  const modeOf=app=>{const mode=app.context?.messageMode??getMessageMode();return mode==='ic'?'public':mode;};
   const formOf=app=>{const root=app.element?.[0]??app.element;
     return root?.matches?.('form')?root:root?.querySelector?.('form');};
   const showing=()=>active?.session&&!['submitted','cancelled'].includes(active.session.status)?active.session:null;
@@ -74,6 +74,7 @@ export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=global
         if(getSetting(SETTINGS.enabled)===false) return;
         adapter=dice3d({onSettled(token,values) {
           const record=records.get(token.sessionId);if(!record?.session.settle(token,values)) return;
+          void adapter.removeSession(record.session.id,token);paint();
           if(record.session.complete&&getSetting(SETTINGS.autoSubmitOnFill)!==false&&!record.submitting)
             formOf(record.app)?.requestSubmit();
         },onFailure(token) {
@@ -106,7 +107,8 @@ export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=global
     },
     refresh(){tray?.setSize(getSetting(SETTINGS.traySize)??220);},
     diagnose(){return {versions,capabilities:{enabled,dsn:Boolean(adapter),dialogs:Boolean(uninstall)},
-      sessionCount:records.size,ownedInstanceCount:adapter?.ownedCount??0};}
+      sessionCount:records.size,ownedInstanceCount:adapter?.ownedCount??0,
+      activeMode:showing()?.mode??null,dialogCount:apps.size};}
   };return api;
 }
 
@@ -145,6 +147,7 @@ if(globalThis.Hooks) {
       if(bridge?.diagnose().capabilities.enabled) {bridge.refresh();return;}
       const v=versions();
       if(game.system.id!=='pf2e'||!game.modules.get('lib-wrapper')?.active||!game.modules.get('dice-so-nice')?.active||
+        !game.dice3d?.box?.ready||
         !minimum(v.foundry,'14.361')||!minimum(v.pf2e,'8.5.1')||!minimum(v.dsn,'6.4.1')) return;
       await registerPf2eColorsets(game.dice3d);
       bridge=createBridge({versions:v,getSetting:readSetting,pf2e:options=>installPf2eBridge(options),

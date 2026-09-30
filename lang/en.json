@@ -1,6 +1,6 @@
 {
   "PD": {
-    "Tray": "Dice tray", "Private": "Private roll", "NativeOnly": "Use the Roll button", "NotSubmitted": "Roll not submitted. Use the Roll button.",
+    "Tray": "Dice tray", "Private": "Private roll", "NativeOnly": "Use the Roll button", "NotSubmitted": "Roll not submitted. Reopen the roll dialog.",
     "Settings": {
       "enabled": {"Name": "Enable", "Hint": "Show the dice tray."},
       "traySize": {"Name": "Tray size", "Hint": "Size in pixels."},

@@ -12,11 +12,11 @@ export function checkDiceFormula(context) {
 }
 
 export function diceEntries(roll) {
-  const instances=roll.instances?.length?roll.instances:[roll];
+  const compound=Boolean(roll.instances?.length),instances=compound?roll.instances:[roll];
   return instances.flatMap((instance,i)=>{
     if(instance.persistent&&!instance.options?.evaluatePersistent) return [];
     return (instance.dice??[]).map((term,j)=>({term,termPath:`${i}/${j}`,
-      flavor:instance.type??term.options?.flavor??null}));
+      flavor:(compound?instance.type:null)??term.options?.flavor??null}));
   });
 }
 

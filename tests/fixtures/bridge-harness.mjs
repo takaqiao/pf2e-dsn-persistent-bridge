@@ -4,7 +4,7 @@ import {makeDie,makeCheckRoll} from './pf2e-rolls.mjs';
 import {deferred} from './dsn-runtime.mjs';
 class CheckModifiersDialog {constructor(root){this.id=1;this.element=[root];this.context={domains:['skill'],messageMode:'public'};this.check={totalModifier:4};}}
 class CheckRoll {}
-export async function makeBridgeHarness() {
+export async function makeBridgeHarness({autoSubmit=true}={}) {
   const hooksMap=new Map(),wrappers=new Map(),hooks={on(n,f){hooksMap.set(n,f);return n;},off(n){hooksMap.delete(n);}};
   const wrapper={register(id,n,f){wrappers.set(n,f);},unregister(id,n){wrappers.delete(n);}};
   let diceCount=1;
@@ -15,7 +15,7 @@ export async function makeBridgeHarness() {
   const view={element:{},mount(){},setSize(){},show(){},clear(){},setState(){},dispose(){this.disposed=true;},layout(){}};
   let cancelled=0;
   const bridge=createBridge({userId:'u',versions:{foundry:'14.368',pf2e:'8.5.1',dsn:'6.4.1'},
-    getSetting:key=>key==='enabled'||key==='autoSubmitOnFill'?true:220,
+    getSetting:key=>key==='enabled'?true:key==='autoSubmitOnFill'?autoSubmit:220,
     dice3d:options=>{callbacks=options;return adapter;},view:()=>view,
     gestures:()=>Object.assign(async()=>{cancelled++;},{cancel:async()=>{cancelled++;}}),
     pf2e:options=>installPf2eBridge({...options,hooks,wrapper,game:{pf2e:{Check:{}}},

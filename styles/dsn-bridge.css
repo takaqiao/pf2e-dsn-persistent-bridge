@@ -1,6 +1,6 @@
-canvas.pd-tray-mounted { display:block !important; opacity:1 !important; }
+.pd-tray-mounted { display:block !important; opacity:1 !important; }
 .pd-tray-hit {
-  position:fixed; z-index:1001; margin:0; padding:0; background:transparent;
+  position:fixed; z-index:90; margin:0; padding:0; background:transparent;
   border:0; box-shadow:none; touch-action:none; cursor:grab; color:var(--color-text-primary);
 }
 .pd-tray-hit:hover { background:transparent; box-shadow:inset 0 0 0 2px var(--color-border-highlight); }

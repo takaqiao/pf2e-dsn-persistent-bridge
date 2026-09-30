@@ -51,7 +51,7 @@ test('spawn uses reserved guests and an invalidated late mesh is removed',async(
     onSettled:()=>{},onBoxChanged:()=>{}});await adapter.ready();s.startBatch();
   const spawn=adapter.spawn(s,s.descriptors[0],{x:.4,y:.3});s.cancel('close');waiting.resolve();
   assert.equal(await spawn,null);assert.equal(runtime.removed.length,1);
-  assert.deepEqual(runtime.spawnCalls[0].opts.guest,{pendingId:'s',reservedForUserId:'u'});
+  assert.deepEqual(runtime.spawnCalls[0].opts.guest,{pendingId:'pd-session:s',reservedForUserId:'u'});
 });
 test('d100 uses linked digit meshes but submits one logical value',async()=>{
   const h=await harness({},100),meshes=h.runtime.box.persistentDiceManager.persistentDiceList;
@@ -85,6 +85,15 @@ test('mine mode briefly reveals public foreign dice and restores the current pre
   assert.equal(foreign.parent.visible,false);
   const collision=h.runtime.physics.filter(([name])=>name==='setCollisionResponse');
   assert.deepEqual(collision.map(([,args])=>args),[{ids:[foreign.id],enabled:true},{ids:[foreign.id],enabled:false}]);
+});
+test('a cold remote task model finishes creation before its throw and removal',async()=>{
+  const wait=deferred(),h=await harness({remoteCreateWait:wait}),native=h.runtime.persistent;
+  const create=native.handleMessage({type:'persistent-create',user:'other',data:{persistentId:'remote',
+    guest:{pendingId:'pd-session:other-session'}}});
+  const thrown=native.handleMessage({type:'persistent-throw',user:'other',data:{persistentIds:['remote']}});
+  const removed=native.handleMessage({type:'persistent-remove',user:'other',data:{persistentIds:['remote']}});
+  wait.resolve();await Promise.all([create,thrown,removed]);
+  assert.deepEqual(h.runtime.remoteReplays,['remote']);assert.equal(h.runtime.remoteCreated.size,0);
 });
 
 test('failed compound secondary removes primary and its ownership record',async()=>{
@@ -130,4 +139,23 @@ test('cleanup of an old generation leaves a newer batch in the same dialog intac
   await h.adapter.removeSession(h.s.id,h.token);
   assert.equal(h.adapter.ownership(next.userData.persistentId)?.mesh,next);
   assert.equal(h.adapter.ownership(h.primary.userData.persistentId),null);
+});
+test('early Foundry ready before DsN exists safely waits for its own ready hook',async()=>{
+  const adapter=createDsnAdapter({dice3d:undefined,onSettled:()=>{}});
+  assert.equal(await adapter.ready(),false);await adapter.dispose();
+});
+test('native guest throw without an auxiliary Roll still hands off its landed value',async()=>{
+  const h=await harness();await h.runtime.box.persistentDiceManager.onQueueThrow({heldDice:[h.primary],
+    primaries:[h.primary],velocity:{},forcedByMesh:new Map([[h.primary,13]]),roll:null});
+  assert.deepEqual(h.landings[0]?.[1],[{persistentId:h.primary.userData.persistentId,value:13}]);
+});
+test('task guest cannot claim another native interactive pending roll',async()=>{
+  const runtime=makeDsnRuntime();runtime.pendingThrows.pending.set('other-card',{});
+  runtime.pendingThrows.claimThrow=function(){return this.pending.size?'other-card':'fresh-guest-rng';};
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled:()=>{}});await adapter.ready();
+  const s=createSession({id:'s',appId:1,userId:'u',kind:'check',mode:'public',descriptors:[descriptor(20)]});s.startBatch();
+  const die=await adapter.spawn(s,s.descriptors[0],{x:.5,y:.5});
+  assert.equal(runtime.pendingThrows.claimThrow([die],[die],new Map()),'fresh-guest-rng');
+  assert.equal(runtime.pendingThrows.pending.size,1);
+  assert.equal(runtime.pendingThrows.claimThrow([runtime.mesh('d20')],[],new Map()),'other-card');
 });

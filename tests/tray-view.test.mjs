@@ -18,6 +18,9 @@ test('one hundred previews fit inside the octagonal padded floor',()=>{
   assert.deepEqual(positions,previewPositions(100));
   for(const p of positions) assert.ok(Math.hypot(p.x,p.z)+p.size<.81);
 });
+test('a single preview stays miniature instead of filling the tray',()=>{
+  assert.ok(previewPositions(1)[0].size<=.16);
+});
 test('preview cleanup never disposes borrowed geometry or materials',()=>{
   let disposed=0;const mesh={geometry:{dispose:()=>disposed++},material:{dispose:()=>disposed++}};
   const children=[mesh],parent={remove(item){children.splice(children.indexOf(item),1);}};
