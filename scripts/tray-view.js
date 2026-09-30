@@ -51,7 +51,7 @@ export function createTrayView({adapter,THREE,document=globalThis.document,
     const geometry=new ExtrudeGeometry(shape,{depth,bevelEnabled:false});geometry.rotateX(-Math.PI/2);
     resources.push(geometry);const mesh=new Mesh(geometry,material);mesh.receiveShadow=true;group.add(mesh);
   }
-  group.add(previews);group.rotation.x=22*Math.PI/180;
+  group.add(previews);
   const element=document.createElement('button'),icon=document.createElement('i');
   element.type='button';element.className='pd-tray-hit';element.append(icon);
   icon.className='fa-solid fa-eye-slash pd-tray-status';icon.setAttribute('aria-hidden','true');

@@ -1,6 +1,6 @@
 /** A gesture owns one session/token. Native DsN owns motion, RNG and landing. */
 export function createGestureController({element,adapter,getSession,
-  setTimeout=globalThis.setTimeout,clearTimeout=globalThis.clearTimeout,onState=()=>{}}) {
+  setTimeout=globalThis.setTimeout,clearTimeout=globalThis.clearTimeout,now=()=>performance.now(),onState=()=>{}}) {
   const window=element.ownerDocument.defaultView,listeners=[],timers=new Set();
   let active=null,epoch=0,disposed=false;
   const later=(fn,ms)=>{const id=setTimeout(()=>{timers.delete(id);fn();},ms);timers.add(id);return id;};
@@ -40,12 +40,12 @@ export function createGestureController({element,adapter,getSession,
       const grabbed=await adapter.beginGrab(r.session,meshes,r.sample);
       if(!valid(r)||!grabbed) {await clean(r,false);if(active===r) await cancel();return;}
       announce('held',r,0);adapter.setGrabScale?.(0);
-      let elapsed=0;
+      const started=now();
       const grow=()=>{
         if(!valid(r)||r.state!=='held') return;
-        elapsed=Math.min(150,elapsed+16);const progress=elapsed/150;
-        adapter.setGrabScale?.(progress);announce('held',r,progress);
-        if(elapsed<150) later(grow,16);
+        const progress=Math.min(1,(now()-started)/150);
+        adapter.setGrabScale?.(progress);
+        if(progress<1) later(grow,16);
       };later(grow,16);
     } catch(error) {console.warn('Persistent Dice: grab failed',error);if(active===r) await cancel();else await clean(r,false);}
   }

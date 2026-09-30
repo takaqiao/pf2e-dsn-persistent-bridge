@@ -2,11 +2,13 @@ export function deferred() {
   let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
   return {promise,resolve,reject};
 }
-export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,spawnWait=null,remoteCreateWait=null}={}) {
+export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,spawnWait=null,remoteCreateWait=null,persistentEnabled=true,releaseWait=null}={}) {
   let id=0;
   const flags={appearance:{global:{diceColor:'#123456'}},saved:{appearance:true}};
   const user={id:'u',color:'#abcdef',getFlag:(scope,key)=>flags[key]};
-  const runtime={flags,user,removed:[],chats:[],physics:[],sfxRolls:[],spawnCalls:[],renderCalls:0};
+  const runtime={flags,user,removed:[],removeCalls:[],events:[],chats:[],physics:[],sfxRolls:[],spawnCalls:[],renderCalls:0};
+  const listeners=new Map();runtime.hooks={on(name,fn){listeners.set(fn,name);return fn;},off(name,fn){listeners.delete(fn);},
+    callAll(name){for(const [fn,event] of listeners) if(name===event) fn();}};
   runtime.utils={duplicate:structuredClone,isEmpty:o=>!Object.keys(o).length,
     mergeObject(target,source){for(const [key,value] of Object.entries(source??{})) {
       target[key]=value&&typeof value==='object'&&!Array.isArray(value)?
@@ -20,8 +22,9 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
   runtime.diceLibrary=new Library();
   const scene={children:[],add(group){this.children.push(group);},remove(group){
     this.children=this.children.filter(x=>x!==group);}};
-  const mesh=(type,opts={})=>({id:++id,notation:{type},userData:{persistentId:`die-${id}`,
-    ownerUserId:opts.ownerUserId??'u',guestPendingId:opts.guest?.pendingId,linkGroupId:opts.linkGroupId,
+  const mesh=(type,opts={})=>({id:++id,notation:{type},userData:{persistentId:opts.remotePersistentId??`die-${id}`,
+    ownerUserId:opts.ownerUserId??'u',guest:Boolean(opts.guest),guestPendingId:opts.guest?.pendingId,
+    reservedForUserId:opts.guest?.reservedForUserId,linkGroupId:opts.linkGroupId,
     linkGroupSecondary:opts.linkGroupSecondary??false,digitPlace:opts.digitPlace},
     parent:{visible:true,position:{x:0,y:0,z:0}},geometry:{},material:{}});
   const worker={async exec(name,args){runtime.physics.push([name,args]);}};
@@ -31,9 +34,12 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
       if(runtime.grabWait) await runtime.grabWait.promise;
       for(const d of meshes) await worker.exec('addConstraint',{id:d.id});
       this.mouse.heldPersistentDice=meshes;this.mouse.constraint=true;
+      runtime.persistent._emitPersistentEvent('pickup',{data:{persistentIds:meshes.map(d=>d.userData.persistentId)}});
     },_activatePreRoll(){this.mouse.preRoll=true;},_resetPreRollState(){this.mouse.preRoll=false;},
-    onPersistentEvent(){}};
+    onPersistentEvent(type,data){runtime.persistent._emitPersistentEvent(type,data);}};
   const manager={persistentDiceList:[],persistentDiceVisibility:'all',physicsWorker:worker,
+    async throwPersistentDice(meshes){runtime.persistent._emitPersistentEvent('throw',
+      {data:{persistentIds:meshes.map(d=>d.userData.persistentId),results:[{forcedResult:17}]}});},
     matchSFX(dice,sfx,roll){runtime.sfxRolls.push(roll);},
     _applyPersistentDieVisibility(d){d.parent.visible=this.persistentDiceVisibility==='all'||
       (this.persistentDiceVisibility==='mine'&&d.userData.ownerUserId==='u');},
@@ -58,10 +64,20 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
         delete d.persistentThrow;delete d.sim;
       }
     }};
-  runtime.box={ready:Promise.resolve(),scene,inputHandler:input,persistentDiceManager:manager,
+  runtime.box={ready:Promise.resolve(),scene,inputHandler:input,persistentDiceManager:manager,persistentDiceEnabled:persistentEnabled,
+    get persistentDiceList(){return manager.persistentDiceList;},
+    async spawnPersistentDie(type,appearance,pct,library,opts){
+      if(!this.persistentDiceEnabled) return null;
+      if(spawnWait) await spawnWait.promise;
+      const d=mesh(type,opts);manager.persistentDiceList.push(d);
+      runtime.hooks.callAll('dice-so-nice.persistentDiceChanged');return d;
+    },async removePersistentDie(id){manager.persistentDiceList.splice(0,manager.persistentDiceList.length,
+      ...manager.persistentDiceList.filter(d=>d.userData.persistentId!==id));},
     throwEngine:engine,physicsWorker:worker,renderer:{scopedTextureCache:{type:'board'}},
     renderScene(){runtime.renderCalls++;},async onMouseMove(){},
-    async onMouseUp(){input.mouse.constraintDown=false;input.mouse.heldPersistentDice=[];return true;},
+    async onMouseUp(){const meshes=[...input.mouse.heldPersistentDice];input.mouse.constraintDown=false;input.mouse.heldPersistentDice=[];
+      if(releaseWait) await releaseWait.promise;
+      if(meshes.length) await manager.throwPersistentDice(meshes);return true;},
     fromPositionPct:p=>({x:p.x-.5,z:.5-p.y}),toPositionPct:(x,z)=>({x:x+.5,y:.5-z}),
     replayRemoteThrow:(...args)=>manager.replayRemoteThrow(...args),
     fadeOutEphemeral(){},clearScene(){},setScene(){},async update(){}};
@@ -70,8 +86,9 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
     getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})};
   runtime._buildDiceBox=function(){return this.box;};runtime._fadeOutCanvas=()=>{};
   runtime._cancelCanvasFade=()=>{};
-  runtime.pendingThrows={pending:new Map(),claimThrow(){return null;},refreshEligibility(){}};
+  runtime.pendingThrows={pending:new Map(),claimThrow(){return null;},refreshEligibility(){},shouldStampInteractive(){return true;}};
   runtime.persistent={_persistentRoleContext:()=>({}),
+    _emitPersistentEvent(type,data){runtime.events.push([type,data]);},
     async handleMessage(request){
       runtime.remoteCreated??=new Set();runtime.remoteReplays??=[];
       if(request.type==='persistent-create') {
@@ -85,9 +102,8 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
     },
     async spawn(type,pct,opts,sync){
       runtime.spawnCalls.push({type,pct,opts,sync});
-      if(spawnWait) await spawnWait.promise;
-      const d=mesh(type,opts);manager.persistentDiceList.push(d);return d;
-    },async remove(persistentId){runtime.removed.push(persistentId);
+      return runtime.box.spawnPersistentDie(type,opts.appearance,pct,opts.diceLibrary,opts);
+    },async remove(persistentId,sync){runtime.removed.push(persistentId);runtime.removeCalls.push([persistentId,sync]);
       manager.persistentDiceList.splice(0,manager.persistentDiceList.length,
         ...manager.persistentDiceList.filter(d=>d.userData.persistentId!==persistentId));
     }};

@@ -45,6 +45,7 @@ test('idle tray paints once and mounts real extruded octagonal geometry',()=>{
   const h=viewHarness();h.view.mount();const group=h.scene.children[0];
   assert.equal(group.children[0].geometry.type,'ExtrudeGeometry');
   assert.equal(group.children[1].geometry.type,'ExtrudeGeometry');
+  assert.equal(group.rotation.x,0);
   assert.ok(h.renders<=2);assert.equal(h.scene.children.length,1);
   assert.ok(Math.abs(parseFloat(h.view.element.style.width)-220)<3);
   h.view.dispose();assert.equal(h.scene.children.length,0);

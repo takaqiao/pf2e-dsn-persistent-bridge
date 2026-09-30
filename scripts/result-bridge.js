@@ -69,10 +69,10 @@ export function createRollBindings() {
 
 let revision=0;
 export async function evaluateWithSnapshot(roll,snapshot,wrapped,args) {
-  roll.options??={};delete roll.options.pdPhysicalRevision;
+  roll.options??={};delete roll.options.pdPhysicalRevision;delete roll.options.pdPhysicalComplete;
   if(snapshot?.mode!=='public'||!snapshot.values?.length) return wrapped(...args);
   const entries=diceEntries(roll),byPath=new Map(entries.map(e=>[e.termPath,e]));
-  const saved=[],queues=new Map();
+  const saved=[],queues=new Map(),physicalResults=new Set();
   for(const {key,value} of snapshot.values) {
     const descriptor=snapshot.descriptors.find(d=>d.key===key),entry=byPath.get(descriptor?.termPath);
     if(!entry||entry.term.faces!==descriptor.faces||entry.flavor!==descriptor.flavor||
@@ -90,11 +90,13 @@ export async function evaluateWithSnapshot(roll,snapshot,wrapped,args) {
       term.roll=function(options={}) {
         const index=ordinal++;
         if(!values.has(index)) return original.call(this,options);
-        const result={result:values.get(index),active:true};this.results.push(result);return result;
+        const result={result:values.get(index),active:true};physicalResults.add(result);this.results.push(result);return result;
       };
     }
     const result=await wrapped(...args);
     roll.options.pdPhysicalRevision=`${snapshot.id}:${Date.now()}:${++revision}`;
+    const results=diceEntries(roll).flatMap(({term})=>term.results);
+    roll.options.pdPhysicalComplete=results.length>0&&results.every(result=>physicalResults.has(result));
     return result;
   } finally {
     for(const {term,original,hadOwn} of saved) {

@@ -11,10 +11,27 @@ export function shouldSuppressRevision(roll,recordedRevision) {
 export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure=()=>{},
   getSessionForDie=()=>null,user=globalThis.game?.user,utils=globalThis.foundry?.utils,
   getActor=id=>globalThis.game?.actors?.get(id),
-  interaction=globalThis.canvas?.mouseInteractionManager}) {
+  interaction=globalThis.canvas?.mouseInteractionManager,hooks=globalThis.Hooks,
+  nativePersistentEnabled=()=>globalThis.game?.settings.get('dice-so-nice','persistentDice')}) {
   let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null,lifecycleBound=false,trayCanvas=null;
-  const owned=new Map(),pending=new Set(),meshBatch=new WeakMap(),patches=[],trayGroups=new Set();
-  const remoteTasks=new Set(),remoteChains=new Map();
+  const owned=new Map(),pending=new Set(),meshBatch=new WeakMap(),patches=[],trayGroups=new Set(),features=[],removingLegacy=new Set(),releases=new Map(),moves=new Set();
+  const taskDiePrefix=`pd-die:${user?.id}:`,isTaskId=id=>typeof id==='string'&&id.startsWith(taskDiePrefix);
+  let legacyHook=null;
+  const localGuest=opts=>opts?.guest?.pendingId?.startsWith(TASK_PREFIX)&&
+    opts.guest.reservedForUserId===user.id&&opts.ownerUserId===user.id;
+  async function removeLegacy(owner,all=false) {
+    await Promise.all([...owner.persistentDiceList].filter(mesh=>all||!localGuest({
+      guest:mesh.userData.guest?{pendingId:mesh.userData.guestPendingId,reservedForUserId:mesh.userData.reservedForUserId}:null,
+      ownerUserId:mesh.userData.ownerUserId})).map(async mesh=>{
+      if(removingLegacy.has(mesh)) return;removingLegacy.add(mesh);
+      try {await owner.removePersistentDie(mesh.userData.persistentId);} finally {removingLegacy.delete(mesh);}
+    }));
+  }
+  function restoreFeature(owner) {
+    const feature=features.find(f=>f.owner===owner);if(!feature) return;
+    const setting=nativePersistentEnabled();
+    owner.persistentDiceEnabled=setting===undefined?feature.enabled:owner.allowInteractivity&&setting;
+  }
   const current=record=>!disposed&&record.boxGeneration===boxGeneration&&
     record.session.mode==='public'&&record.session.isCurrent(record.token);
   function patch(object,key,make) {
@@ -29,24 +46,19 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   }
   function bindLifecycle() {
     if(lifecycleBound) return;lifecycleBound=true;
-    patch(dice3d.persistent,'handleMessage',original=>request=>{
-      const data=request.data??{},create=request.type==='persistent-create'&&
-        data.guest?.pendingId?.startsWith(TASK_PREFIX);
-      if(create) remoteTasks.add(data.persistentId);
-      const ids=create?[data.persistentId]:data.persistentIds??[];
-      if(!ids.some(id=>remoteTasks.has(id))) return original(request);
-      // Cold model loading must complete before native pickup/throw/remove events.
-      const generation=boxGeneration;
-      const work=Promise.all(ids.map(id=>remoteChains.get(id)?.catch(()=>{}))).then(()=>{
-        if(!disposed&&generation===boxGeneration) return original(request);
-      });
-      for(const id of ids) remoteChains.set(id,work);
-      const clear=()=>{for(const id of ids) if(remoteChains.get(id)===work) {
-        remoteChains.delete(id);if(request.type==='persistent-remove') remoteTasks.delete(id);
-      }};
-      work.then(clear,clear);return work;
+    patch(dice3d.persistent,'_emitPersistentEvent',original=>(type,event)=>{
+      const ids=[...(event?.data?.persistentIds??[]),event?.data?.persistentId,
+        ...(event?.data?.positions??[]).map(position=>position.persistentId)];
+      if(type==='move'&&!event?.data?.positions?.length) return;
+      if(ids.some(isTaskId)) return;
+      return original(type,event);
     });
     const manager=dice3d.pendingThrows,nativeClaim=manager.claimThrow;
+    patch(manager,'shouldStampInteractive',original=>message=>
+      message.rolls?.some(roll=>roll.options?.pdPhysicalRevision)?false:original(message));
+    if(hooks) legacyHook=hooks.on('dice-so-nice.persistentDiceChanged',()=>{
+      if(!disposed&&box) void removeLegacy(box).catch(error=>console.warn('Persistent Dice: legacy cleanup',error));
+    });
     patch(manager,'claimThrow',original=>(meshes,primaries,linked)=>{
       if(!meshes.length||!meshes.every(mesh=>{const r=lookup(mesh);return r&&current(r);}))
         return original(meshes,primaries,linked);
@@ -66,6 +78,9 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   }
   function bindScene() {
     const owner=box;
+    features.push({owner,enabled:owner.persistentDiceEnabled});owner.persistentDiceEnabled=true;
+    patch(owner,'spawnPersistentDie',original=>(type,appearance,position,library,opts)=>
+      localGuest(opts)?original(type,appearance,position,library,opts):null);
     patch(owner,'clearScene',original=>(...args)=>{
       ++boxGeneration;for(const group of trayGroups) owner.scene.remove(group);
       for(const record of owned.values()) record.session.cancel('scene cleared');
@@ -112,7 +127,17 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       initialPt:new Map(data.heldDice.map(d=>[d,d.persistentThrow])),completion:null,landed:false};
   }
   function bindQueue() {
-    const manager=box.persistentDiceManager,engine=box.throwEngine;
+    const owner=box,manager=owner.persistentDiceManager,engine=owner.throwEngine;
+    patch(owner,'onMouseMove',original=>(...args)=>{
+      if(!owner.inputHandler.mouse.heldPersistentDice.some(mesh=>isTaskId(mesh.userData?.persistentId))) return original(...args);
+      const operation=Promise.resolve(original(...args));moves.add(operation);
+      return operation.finally(()=>moves.delete(operation));
+    });
+    patch(manager,'throwPersistentDice',original=>(meshes,...args)=>{
+      if(meshes.length&&meshes.every(mesh=>isTaskId(mesh.userData?.persistentId))&&
+        meshes.some(mesh=>{const record=lookup(mesh);return !record||!current(record);})) return;
+      return original(meshes,...args);
+    });
     patch(manager,'onQueueThrow',original=>async data=>{
       const batch=capture(data);if(!batch) return original(data);
       pending.add(batch);for(const mesh of batch.meshes) meshBatch.set(mesh,batch);
@@ -148,30 +173,12 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       if(ordinary.length||!groups.size) original(ordinary,sfx,roll);
       for(const [batch,list] of groups) original(list,sfx,batch.roll);
     });
-    patch(box,'replayRemoteThrow',original=>async (meshes,...args)=>{
-      const generation=boxGeneration,ownerBox=box,m=ownerBox.persistentDiceManager;
-      const targets=m.persistentDiceVisibility==='mine'?
-        meshes.filter(d=>d.userData.ownerUserId!==user.id&&d.userData.guestPendingId?.startsWith(TASK_PREFIX)):[];
-      if(targets.length) {
-        for(const mesh of targets) mesh.parent.visible=true;
-        await ownerBox.physicsWorker.exec('setCollisionResponse',{ids:targets.map(d=>d.id),enabled:true});
-      }
-      try{return await original(meshes,...args);}
-      finally {
-        if(targets.length&&generation===boxGeneration&&!disposed) {
-          const remaining=targets.filter(d=>m.persistentDiceList.includes(d));
-          await ownerBox.physicsWorker.exec('setCollisionResponse',{
-            ids:remaining.map(d=>d.id),enabled:m.persistentDiceVisibility!=='mine'});
-          for(const mesh of remaining) m._applyPersistentDieVisibility(mesh);
-          ownerBox.renderScene();
-        }
-      }
-    });
     patch(box,'onMouseUp',original=>async event=>{
       if(!held) return original(event);
       if(event?.type==='pointercancel'||!current(held)) {await cancelGrab();return true;}
       const release=held;held=null;release.session.setFlight(release.token);
-      return original(event);
+      const operation=Promise.resolve().then(()=>original(event));releases.set(operation,release);
+      try {return await operation;} finally {releases.delete(operation);}
     });
   }
   function resolveAppearance(descriptor,type=`d${descriptor.faces}`) {
@@ -252,27 +259,28 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
         const record=lookup(mesh);record.normalScale??=mesh.scale.clone();
         mesh.scale.copy(record.normalScale).multiplyScalar(.3+.7*progress);
       }
-      box.renderScene();
     },
     async ready() {
       if(disposed) return false;
       const next=dice3d?.box;if(!next) return false;await next.ready;
       const i=next?.inputHandler,m=next?.persistentDiceManager,e=next?.throwEngine;
-      if(!dice3d.persistent?.spawn||!dice3d.persistent?.remove||!dice3d.persistent?.handleMessage||!dice3d.pendingThrows?.claimThrow||
-        !i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||
-        !m?.onQueueThrow||!m?.matchSFX||!e?.handlePersistentThrowCompletion||
-        !e?.createDiceMesh||!next?.replayRemoteThrow||!next?.renderScene||
+      if(!dice3d.persistent?.spawn||!dice3d.persistent?.remove||!dice3d.persistent?._emitPersistentEvent||!dice3d.pendingThrows?.claimThrow||
+        !dice3d.pendingThrows?.shouldStampInteractive||!next.spawnPersistentDie||!next.removePersistentDie||
+        next.allowInteractivity===false||!i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||
+        !m?.onQueueThrow||!m?.matchSFX||!m?.throwPersistentDice||!e?.handlePersistentThrowCompletion||
+        !e?.createDiceMesh||!next?.renderScene||
         !dice3d.exports?.Utils||!dice3d.DiceFactory?.getAppearanceForDice||!utils||!user) return false;
       if(box===next) {refreshTrayCanvas();return true;}
       const previous=box;
       if(previous) {
-        remoteTasks.clear();remoteChains.clear();
+        restoreFeature(previous);
         for(const group of trayGroups) previous.scene.remove(group);
         for(const record of owned.values()) record.session.cancel('box rebuilt');
         await cancelGrab();owned.clear();
       }
       if(disposed||dice3d.box!==next) return false;
       box=next;++boxGeneration;bindQueue();bindScene();bindLifecycle();
+      await removeLegacy(box,true);
       for(const group of trayGroups) box.scene.add(group);
       refreshTrayCanvas();
       onBoxChanged(box,boxGeneration);return true;
@@ -294,13 +302,14 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       for(let n=0;n<places.length;n++) {
         const type=places[n][0],appearance=resolveAppearance(descriptor,type);
         const mesh=await dice3d.persistent.spawn(type,positionPct,{...appearance,
+          remotePersistentId:`${taskDiePrefix}${globalThis.crypto.randomUUID()}`,
           guest:{pendingId:`${TASK_PREFIX}${session.id}`,reservedForUserId:session.userId},linkGroupId,
-          linkGroupSecondary:n>0,digitPlace:n,ownerUserId:session.userId},true);
+          linkGroupSecondary:n>0,digitPlace:n,ownerUserId:session.userId},false);
         if(mesh) created.push(mesh);
         if(!mesh||!current(record)) {
           for(const die of created) {
             owned.delete(die.userData.persistentId);
-            await dice3d.persistent.remove(die.userData.persistentId,true);
+            await dice3d.persistent.remove(die.userData.persistentId,false);
           }
           return null;
         }
@@ -345,10 +354,12 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     },cancelGrab,
     async removeSession(sessionId,token) {
       if(held?.session.id===sessionId) await cancelGrab(token);
+      await Promise.allSettled([...releases].filter(([,record])=>record.session.id===sessionId&&
+        (!token||record.token.generation===token.generation)).map(([operation])=>operation));
       const records=[...owned.entries()].filter(([,r])=>r.session.id===sessionId&&
         (!token||r.token.generation===token.generation));
       for(const [id] of records) owned.delete(id);
-      for(const [id] of records) await dice3d.persistent.remove(id,true);
+      for(const [id] of records) await dice3d.persistent.remove(id,false);
     },
     mountTray(group) {
       const owner=box;trayGroups.add(group);owner.scene.add(group);
@@ -357,10 +368,14 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
         refreshTrayCanvas();box?.renderScene();};
     },renderTray(){if(!disposed) box?.renderScene();},
     async dispose() {
-      if(disposed) return;disposed=true;++boxGeneration;remoteTasks.clear();remoteChains.clear();await cancelGrab();
+      if(disposed) return;disposed=true;++boxGeneration;await cancelGrab();
+      await Promise.allSettled([...releases.keys()]);
+      await Promise.allSettled([...moves]);
       for(const id of new Set([...owned.values()].map(r=>r.session.id))) await api.removeSession(id);
       for(const group of trayGroups) box?.scene.remove(group);
       trayGroups.clear();refreshTrayCanvas();
+      if(legacyHook!==null) hooks.off('dice-so-nice.persistentDiceChanged',legacyHook);
+      for(const {owner} of features) restoreFeature(owner);
       for(const {object,key,original,hadOwn,replacement} of patches.reverse()) if(object[key]===replacement) {
         if(hadOwn) object[key]=original;else delete object[key];
       }

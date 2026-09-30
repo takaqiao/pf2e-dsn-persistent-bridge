@@ -11,7 +11,7 @@ import {evaluateWithSnapshot} from './result-bridge.js';
 
 /** Dependency factories make enabling create fresh resources after a full teardown. */
 export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=globalThis.game?.user?.id,
-  versions={},getMessageMode=()=>globalThis.game?.settings.get('core','messageMode')??'public'}) {
+  versions={},onPhysicalRoll=()=>{},getMessageMode=()=>globalThis.game?.settings.get('core','messageMode')??'public'}) {
   const apps=new Map(),records=new Map(),snapshots=new Map();
   let adapter=null,tray=null,controller=null,uninstall=null,enabled=false,enabling=null,active=null;
   const modeOf=app=>{const mode=app.context?.messageMode??getMessageMode();return mode==='ic'?'public':mode;};
@@ -91,7 +91,8 @@ export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=global
           else if(state==='idle') paint();
         }});
         uninstall=pf2e({onDialog:openDialog,onFocus:focus,onClose:closeDialog,onSubmit:submit,
-          getSnapshot:api.getSnapshot,onEvaluated(session,success) {
+          getSnapshot:api.getSnapshot,onEvaluated(session,success,roll) {
+            if(success&&roll?.options?.pdPhysicalRevision) onPhysicalRoll(roll);
             snapshots.delete(session.id);const r=records.get(session.id);records.delete(session.id);
             if(r?.app) apps.delete(r.app);void adapter.removeSession(session.id);
             if(active===r) {active=[...apps.values()].at(-1)??null;paint();}
@@ -112,19 +113,25 @@ export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=global
   };return api;
 }
 
-export function installMessageSuppression(hooks=globalThis.Hooks,game=globalThis.game) {
-  const revisions=new Map(),ids=[];
-  const record=message=>revisions.set(message.id,(message.rolls??[]).map(r=>r.options?.pdPhysicalRevision??null));
-  for(const name of ['createChatMessage','updateChatMessage']) ids.push([name,hooks.on(name,record)]);
-  ids.push(['deleteChatMessage',hooks.on('deleteChatMessage',m=>revisions.delete(m.id))]);
+export function installMessageSuppression(hooks=globalThis.Hooks,game=globalThis.game,document=globalThis.document) {
+  const revisions=new Set(),ids=[];
+  ids.push(['deleteChatMessage',hooks.on('deleteChatMessage',m=>{
+    for(const roll of m.rolls??[]) revisions.delete(roll.options?.pdPhysicalRevision);
+  })]);
   ids.push(['diceSoNiceMessagePreProcess',hooks.on('diceSoNiceMessagePreProcess',(id,interception)=>{
     const message=game.messages.get(id);
-    // DsN's create hook runs first; observe the current incoming revision here too.
-    if(message) record(message);
-    const known=revisions.get(id);
-    if(message?.rolls.some((r,i)=>shouldSuppressRevision(r,known?.[i]))) interception.willTrigger3DRoll=false;
+    if(game.settings?.get('dice-so-nice','animateInlineRoll')&&message?.content?.includes('inline-roll')) {
+      const content=document.createElement('div');content.innerHTML=message.content;
+      if(content.querySelector('.inline-roll.inline-result:not(.inline-dsn-hidden)')) return;
+    }
+    const rolls=message?.rolls?.filter(roll=>roll.dice?.length)??[];
+    if(message?.author?.id===game.user.id&&rolls.length&&rolls.every(r=>
+      shouldSuppressRevision(r,r.options?.pdPhysicalRevision)&&revisions.has(r.options.pdPhysicalRevision)))
+      interception.willTrigger3DRoll=false;
   })]);
-  return ()=>{for(const [name,id] of ids) hooks.off(name,id);revisions.clear();};
+  return Object.assign(()=>{for(const [name,id] of ids) hooks.off(name,id);revisions.clear();},
+    {remember(roll) {const revision=roll.options?.pdPhysicalRevision;if(!revision||roll.options.pdPhysicalComplete!==true) return;
+      revisions.add(revision);if(revisions.size>200) revisions.delete(revisions.values().next().value);}});
 }
 
 export async function runChecks(RollClass=globalThis.Roll) {
@@ -149,14 +156,14 @@ if(globalThis.Hooks) {
       if(game.system.id!=='pf2e'||!game.modules.get('lib-wrapper')?.active||!game.modules.get('dice-so-nice')?.active||
         !game.dice3d?.box?.ready||
         !minimum(v.foundry,'14.361')||!minimum(v.pf2e,'8.5.1')||!minimum(v.dsn,'6.4.1')) return;
+      await migrateSettings();
       await registerPf2eColorsets(game.dice3d);
-      bridge=createBridge({versions:v,getSetting:readSetting,pf2e:options=>installPf2eBridge(options),
+      bridge=createBridge({versions:v,getSetting:readSetting,onPhysicalRoll:roll=>suppression?.remember(roll),pf2e:options=>installPf2eBridge(options),
         dice3d:options=>createDsnAdapter({dice3d:game.dice3d,...options}),
         view:async({adapter})=>createTrayView({adapter,THREE:await import(foundry.utils.getRoute('modules/dice-so-nice/libs/three.module.min.js'))}),
         gestures:options=>createGestureController(options)});
       await bridge.enable();suppression??=installMessageSuppression();
       game.modules.get(MOD_ID).api={diagnose:()=>bridge.diagnose(),runChecks};
-      await migrateSettings();
     }).catch(error=>{warn(error);void bridge?.disable();});return sync;
   }
   Hooks.once('init',()=>registerSettings(()=>void synchronize()));

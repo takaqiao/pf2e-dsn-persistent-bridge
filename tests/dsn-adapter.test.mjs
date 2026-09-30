@@ -7,13 +7,72 @@ const descriptor=faces=>({key:'a',termPath:'0/0',ordinal:0,faces,flavor:'fire'})
 async function harness(options={},faces=20) {
   const runtime=makeDsnRuntime(options),landings=[],failures=[];
   const s=createSession({id:'s',appId:1,userId:'u',kind:'check',mode:'public',descriptors:[descriptor(faces)]});
-  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,hooks:runtime.hooks,
     getActor:()=>options.actor??null,onSettled:(...args)=>landings.push(args),
     onFailure:(...args)=>failures.push(args),onBoxChanged:()=>{}});
   assert.equal(await adapter.ready(),true);
   const token=s.startBatch(),primary=await adapter.spawn(s,s.descriptors[0],{x:.5,y:.5});
   return {runtime,adapter,s,token,primary,landings,failures};
 }
+
+test('local task dice work with native decoration disabled and legacy restoration is blocked',async()=>{
+  const h=await harness({persistentEnabled:false});assert.ok(h.primary);
+  const old=await h.runtime.persistent.spawn('d6',{}, {ownerUserId:'u'},false);
+  const remote=await h.runtime.persistent.spawn('d6',{},
+    {guest:{pendingId:'pd-session:remote',reservedForUserId:'other'},ownerUserId:'other'},false);
+  assert.equal(old,null);assert.equal(remote,null);
+  await h.adapter.dispose();assert.equal(h.runtime.box.persistentDiceEnabled,false);
+});
+
+test('already restored legacy bodies clear locally without changing saved flags or broadcasting',async()=>{
+  const runtime=makeDsnRuntime(),old=await runtime.persistent.spawn('d6',{}, {ownerUserId:'u'},false);
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled(){}});
+  await adapter.ready();assert.equal(runtime.box.persistentDiceManager.persistentDiceList.includes(old),false);
+  assert.deepEqual(runtime.events,[]);assert.deepEqual(runtime.removeCalls,[]);
+  await adapter.dispose();
+});
+
+test('physical evaluated messages bypass native interactive pending while ordinary messages retain it',async()=>{
+  const h=await harness();
+  assert.equal(h.runtime.pendingThrows.shouldStampInteractive({rolls:[{options:{pdPhysicalRevision:'r'}}]}),false);
+  assert.equal(h.runtime.pendingThrows.shouldStampInteractive({rolls:[{options:{}}]}),true);
+  await h.adapter.dispose();
+});
+
+test('legacy creation already in flight at startup cannot leave a late physical body',async()=>{
+  const wait=deferred(),runtime=makeDsnRuntime({spawnWait:wait});
+  const old=runtime.persistent.spawn('d6',{}, {ownerUserId:'u'},false);
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,hooks:runtime.hooks,onSettled(){}});
+  await adapter.ready();wait.resolve();await old;await Promise.resolve();
+  assert.equal(runtime.box.persistentDiceManager.persistentDiceList.length,0);
+  assert.deepEqual(runtime.events,[]);await adapter.dispose();
+});
+
+test('late task events stay local after ownership cleanup',async()=>{
+  const h=await harness(),id=h.primary.userData.persistentId;
+  await h.adapter.removeSession('s');
+  h.runtime.persistent._emitPersistentEvent('throw',{data:{persistentIds:[id],results:[{forcedResult:17}]}});
+  h.runtime.persistent._emitPersistentEvent('move',{data:{positions:[{persistentId:id,x:.2,y:.4}]}});
+  h.runtime.persistent._emitPersistentEvent('move',{data:{positions:[]}});
+  assert.deepEqual(h.runtime.events,[]);await h.adapter.dispose();
+});
+
+test('dispose drains an asynchronous native release before uninstalling event isolation',async()=>{
+  const wait=deferred(),h=await harness({releaseWait:wait});
+  await h.adapter.beginGrab(h.s,[h.primary],{clientX:1,clientY:1});
+  const releasing=h.adapter.releaseGrab();let disposed=false;
+  const disposal=h.adapter.dispose().then(()=>{disposed=true;});
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(disposed,false);
+  wait.resolve();await releasing;await disposal;assert.deepEqual(h.runtime.events,[]);
+  assert.equal(h.adapter.ownedCount,0);
+});
+
+test('scene cleanup cannot broadcast a late asynchronous pickup',async()=>{
+  const h=await harness(),wait=deferred();h.runtime.grabWait=wait;
+  const grab=h.adapter.beginGrab(h.s,[h.primary],{clientX:1,clientY:1});
+  h.runtime.box.clearScene();wait.resolve();await grab;
+  assert.deepEqual(h.runtime.events,[]);await h.adapter.dispose();
+});
 test('native queue success without simulation cannot settle',async()=>{
   const h=await harness({simulate:false});
   await h.runtime.triggerOwnedThrow([h.primary],[7]);
@@ -53,6 +112,17 @@ test('spawn uses reserved guests and an invalidated late mesh is removed',async(
   assert.equal(await spawn,null);assert.equal(runtime.removed.length,1);
   assert.deepEqual(runtime.spawnCalls[0].opts.guest,{pendingId:'pd-session:s',reservedForUserId:'u'});
 });
+test('local task spawn, preparation, throw and cleanup emit no persistent socket events',async()=>{
+  const h=await harness(),id=h.primary.userData.persistentId;
+  assert.equal(h.runtime.spawnCalls[0].sync,false);
+  for(const type of ['pickup','move','preroll','throw','release'])
+    h.runtime.persistent._emitPersistentEvent(type,{data:{persistentIds:[id]}});
+  assert.deepEqual(h.runtime.events,[]);
+  h.runtime.persistent._emitPersistentEvent('pickup',{data:{persistentIds:['ordinary']}});
+  assert.equal(h.runtime.events.length,1);
+  await h.adapter.removeSession(h.s.id);
+  assert.deepEqual(h.runtime.removeCalls.at(-1),[id,false]);
+});
 test('d100 uses linked digit meshes but submits one logical value',async()=>{
   const h=await harness({},100),meshes=h.runtime.box.persistentDiceManager.persistentDiceList;
   assert.deepEqual(meshes.map(d=>d.notation.type),['d100','d10']);
@@ -77,15 +147,11 @@ test('cancel during an asynchronous grab removes late constraints without throwi
   const removed=h.runtime.physics.filter(([name])=>name==='removeConstraint');
   assert.ok(removed.length);assert.deepEqual(removed.at(-1)[1].ids,[h.primary.id]);
 });
-test('mine mode briefly reveals public foreign task dice and restores the current preference',async()=>{
-  const h=await harness(),box=h.runtime.box,foreign=h.runtime.mesh('d6',{
-    ownerUserId:'other',guest:{pendingId:'pd-session:foreign-task'}});
-  box.persistentDiceManager.persistentDiceList.push(foreign);
-  box.persistentDiceManager.persistentDiceVisibility='mine';foreign.parent.visible=false;
-  await box.replayRemoteThrow([foreign],{},new Map([[foreign,3]]),[]);
-  assert.equal(foreign.parent.visible,false);
-  const collision=h.runtime.physics.filter(([name])=>name==='setCollisionResponse');
-  assert.deepEqual(collision.map(([,args])=>args),[{ids:[foreign.id],enabled:true},{ids:[foreign.id],enabled:false}]);
+test('held scale updates use the active native ticker instead of extra scene renders',async()=>{
+  const h=await harness();h.primary.scale={clone:()=>({}),copy(){return this;},multiplyScalar(){return this;}};
+  await h.adapter.beginGrab(h.s,[h.primary],{clientX:500,clientY:400});
+  const before=h.runtime.renderCalls;h.adapter.setGrabScale(.5);h.adapter.setGrabScale(1);
+  assert.equal(h.runtime.renderCalls,before);
 });
 test('mine mode keeps unrelated foreign decorative dice hidden without collision overrides',async()=>{
   const runtime=makeDsnRuntime(),box=runtime.box,foreign=runtime.mesh('d6',{ownerUserId:'other'});
@@ -97,14 +163,11 @@ test('mine mode keeps unrelated foreign decorative dice hidden without collision
   assert.deepEqual(seen,[[false]]);assert.equal(foreign.parent.visible,false);
   assert.deepEqual(runtime.physics.filter(([name])=>name==='setCollisionResponse'),[]);
 });
-test('a cold remote task model finishes creation before its throw and removal',async()=>{
-  const wait=deferred(),h=await harness({remoteCreateWait:wait}),native=h.runtime.persistent;
-  const create=native.handleMessage({type:'persistent-create',user:'other',data:{persistentId:'remote',
-    guest:{pendingId:'pd-session:other-session'}}});
-  const thrown=native.handleMessage({type:'persistent-throw',user:'other',data:{persistentIds:['remote']}});
-  const removed=native.handleMessage({type:'persistent-remove',user:'other',data:{persistentIds:['remote']}});
-  wait.resolve();await Promise.all([create,thrown,removed]);
-  assert.deepEqual(h.runtime.remoteReplays,['remote']);assert.equal(h.runtime.remoteCreated.size,0);
+test('native remote handlers remain untouched because task dice are never replicated',async()=>{
+  const runtime=makeDsnRuntime(),handle=runtime.persistent.handleMessage,replay=runtime.box.replayRemoteThrow;
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled:()=>{}});
+  await adapter.ready();assert.equal(runtime.persistent.handleMessage,handle);
+  assert.equal(runtime.box.replayRemoteThrow,replay);
 });
 
 test('failed compound secondary removes primary and its ownership record',async()=>{

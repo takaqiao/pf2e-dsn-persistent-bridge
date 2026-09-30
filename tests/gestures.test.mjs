@@ -16,6 +16,12 @@ test('stationary held release calls native throw exactly once',async()=>{
   const h=makeGestureHarness();lift(h);h.resolveAllSpawns();await h.flush();
   h.pointerUp();h.pointerUp();await h.flush();assert.equal(h.adapter.spinCalls,1);assert.equal(h.adapter.releaseCalls,1);
 });
+test('growth announces held once and finishes by wall time despite a delayed frame',async()=>{
+  const h=makeGestureHarness();lift(h);h.resolveAllSpawns();await h.flush();
+  h.advance(32);h.advance(118);
+  assert.equal(h.states.filter(state=>state==='held').length,1);
+  assert.equal(h.adapter.scales.at(-1),1);
+});
 test('moves preserve actual flick samples for native trajectory',async()=>{
   const h=makeGestureHarness();lift(h);h.resolveAllSpawns();await h.flush();h.pointerMove(-40,10);
   assert.equal(h.adapter.moves.at(-1).clientX,80);assert.equal(h.adapter.moves.at(-1).clientY,110);

@@ -9,6 +9,8 @@ export function registerSettings(onChange=()=>{},game=globalThis.game) {
     type,scope,default:value,range,config:true,onChange:()=>onChange(key)});
 }
 export async function migrateSettings(game=globalThis.game) {
-  if(game.user.getFlag(MOD_ID,'trayMigration')==='0.5.0') return;
-  await game.user.setFlag(MOD_ID,'trayMigration','0.5.0');
+  if(game.user.getFlag(MOD_ID,'trayMigration')==='0.5.1') return;
+  if(game.user.isGM&&game.settings.get('dice-so-nice','persistentDice'))
+    await game.settings.set('dice-so-nice','persistentDice',false);
+  await game.user.setFlag(MOD_ID,'trayMigration','0.5.1');
 }

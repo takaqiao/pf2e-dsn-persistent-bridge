@@ -4,6 +4,23 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.5.1 — Local candidate, unreleased
+
+This candidate follows the user's approved revision to the octagonal tray.
+
+- Preparing, grabbing, growing, spinning and throwing tray dice happen locally. Other players receive the native DsN animation when the public PF2e chat result is created; the roller avoids a duplicate animation.
+- Retired remote persistent-dice compatibility and ordinary fixed-dice controls. The GM's one-time migration disables DsN's world-level fixed-dice setting while retaining saved flags.
+- Aligned the tray floor with the canvas and kept the native camera perspective.
+- Growth uses real elapsed time over about 150ms. The held state is announced once, and the existing native ticker renders size changes without extra redraws per growth step.
+
+The 0.5.0 QA record remains historical evidence. These changes require fresh verification; this entry does not report a published release or completed 0.5.1 browser QA.
+
+## 0.5.0 — Octagonal tray, local candidate
+
+- Replaced the dialog's slot panel with a 3D octagonal tray and whole-hand grab gesture, while retaining native PF2e check and damage dialogs.
+- Updated the compatibility target to Foundry 14.368, PF2e 8.5.1 and DsN 6.4.1. Removed legacy panels, tutorial messages, mirror queues and periodic dice scans.
+- Recorded bounded browser and unit-test evidence in [the 0.5.0 QA record](docs/qa-20260930.md). Its remote persistent-dice behavior is superseded by the 0.5.1 revision above.
+
 ## 0.4.10 — Deep audit: result-corruption fix + visibility patch repair
 
 A full multi-agent source-level audit (against DSN 6.2.4) surfaced several

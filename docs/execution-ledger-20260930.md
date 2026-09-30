@@ -10,7 +10,7 @@ Pre-flight: Task 4 → Tasks 5/6: view element used by gestures; onState adds ac
 Pre-flight: Task 5 → Task 6: Dispose cancels held gestures before adapter teardown.
 Pre-flight: Task 6 → Task 7: diagnostics omit private values; live checks require real runtime evidence.
 
-Task status: 1–7 complete; final review, one fix pass and local candidate packaging complete.
+Task status: 0.5.0 Tasks 1–7, final review, one fix pass and local candidate packaging complete. The user-approved 0.5.1 amendment is in progress; its tests, browser evidence and candidate packaging must be recorded separately. Entries through Final cleanup below are historical 0.5.0 evidence.
 
 Task 2: Ruling: onDialog returns Session|null so the observer can bind the exact identity immediately; the plan's void callback omitted that handoff. Added optional onSubmit/onEvaluated callbacks for freezing and cleanup. Cost if wrong: a physical session could remain unbound; binding and close regression tests pin the contract.
 Task 2: Descriptor retains cloned termOptions/termModifiers for the player's native appearance; deferred persistent damage is excluded from displayed inputs and remains native RNG.
@@ -42,3 +42,49 @@ Final: fixed replacement canvas losing tray visibility/observation — replacing
 Final: fixed mine visibility affecting unrelated decorative throws — mine mode keeps unrelated foreign decorative dice hidden without collision overrides RED→GREEN, suite 97/97. Actual native decorative replay PL visible=false; task replay visible=true; both clients face9+5=14, same message goKdK4Mv7SBRMypO, cleanup0. Empty tray idle5sec tickerAdd0/playStep0.
 Final: packaged local candidate 0.5.0, 18 files, 34634 bytes, SHA256 63f892f6f7469044d3eb815ab97d50a3532f4c246e38eb1e89a04282767a78fe. Verified archive and manifest entry points. QA PID1653769 and tunnel62884 stopped; production PIDs688349/1621366 still running. Keep feature/octagonal-tray as approved; no push/release/production install.
 Final cleanup: automatic approval review rejected removing this plan temporary workspace as blocked by policy. The ignored directory is retained; committed ledger and local candidate are unaffected.
+
+## User-approved amendment — 0.5.1 in progress
+
+Authorization: the user approved local preparation/grab/growth/spin, native receiver animation when the PF2e chat result is created, retirement of remote persistent compatibility and ordinary fixed dice, a one-time GM migration disabling native fixed dice with saved flags preserved, a floor parallel to the canvas, and elapsed-time growth using the existing native ticker. Version 0.5.1 remains a local candidate; no release is authorized. The earlier remote-ordering/mine-replay Ruling and Final mine-visibility verification are superseded behavior, retained here as the history of 0.5.0.
+
+Amendment A1: Ruling: keep task dice and their native preparation/pickup/pre-roll/throw/remove events local, then use PF2e chat synchronization for other players' native DsN animation; only the author remembers and suppresses the exact physical revision — cost if wrong: receivers wait for chat creation and changed native contracts could leak task events or duplicate/miss animations. Verify all native event types and both clients' results; spawn/remove synchronize=false alone is insufficient.
+
+Amendment A2: Ruling: retire remote ordering, remote mine replay/collision adjustments and ordinary fixed-dice compatibility; a GM migrates world persistentDice=false once for 0.5.1 without deleting saved DsN dice flags — cost if wrong: ordinary fixed dice remain unavailable until separately restored, and native setting gates can also prevent local guest physics. Verify local task creation and data preservation after migration; do not treat retained flags as an active ordinary fixed-dice feature.
+
+Amendment A3: Ruling: remove the tray group's extra tilt and retain native camera perspective, aligning its floor with the canvas — cost if wrong: projected depth and hit-area placement change. Recheck resize and overlap; no new octagonal collision system is introduced.
+
+Amendment A4: Ruling: use about 150ms of actual elapsed time for growth, emit held once, and render growth through the existing native ticker — cost if wrong: slow frames jump to the current size, and an unavailable ticker can leave the change unseen. Measure preparation/growth timing and confirm cancellation; native spawn/constraint latency remains outside this optimization.
+
+Documentation: bumped manifest version/download target to 0.5.1 and amended README, changelog and approved spec. Historical QA remains unchanged. This entry records approved decisions and documentation work only; it does not claim tests or 0.5.1 browser QA passed.
+
+## Local amendment review — 2026-10-01
+
+Review: one fresh independent read-only review of the 0.5.1 amendment, gpt-6-astra xhigh. Critical: none. Two findings retained as Important by effect. One implementer fix pass; no second review. Browser acceptance remains in progress.
+
+Amendment A5: Ruling: enable the native per-box gate only for local guests with matching pd-session: prefix/reserved user/owner, clear original restored meshes locally without touching flags/socket, catch late restoration via persistentDiceChanged, and restore the current world setting on dispose. Give task dice stable pd-die:<userId>:<UUID> native remotePersistentId values; isolate persistentId(s) and positions[].persistentId even after ownership cleanup, skip empty move events, drop invalid task throws before RNG, and drain release/move Promises before uninstalling isolation — cost if wrong: native gate/event/worker contracts may require an adapter update, and disposal waits for native operations. Fresh browser checks are still required.
+
+Amendment A6: Ruling: determine completeness from the identity Set of actual injected die-result objects, remember only local complete revisions, and suppress author animation only when all dice-bearing Rolls in a message qualify. Partial/mixed messages and enabled visible inline RNG results retain the complete native animation — cost if wrong: physical dice already shown locally can replay. Hidden/disabled inline animation does not force replay. This narrows A1 and preserves visible RNG results.
+
+I1 fixed: stable task IDs outlive the ownership map; async native release, pickup and move events remain isolated through scene cleanup and disposal. Three asynchronous-event regressions were RED then GREEN; the native positions[] move payload regression was added RED then GREEN as well. Invalid task throws are stopped before native RNG.
+
+I2 fixed: enabled visible inline RNG results alongside complete physical Rolls no longer lose native animation. The regression covering enabled, disabled and hidden inline results was RED then GREEN. Partial and mixed-message suppression follows A6.
+
+Verification reported by the implementer: npm test 109/109, npm run check and git diff --check passed after the one fix pass. This is code-level evidence, not a declaration that 0.5.1 browser acceptance passed. Detailed disposition: [final-review-local-20261001.md](final-review-local-20261001.md).
+
+Minor (deferred): README/CHANGELOG's duplicate-animation promise lacks the partial/mixed qualification. Keep the original sentences under the executing-plans Minor rule; A6 records the practical tradeoff. The existing initial light-theme palette issue remains deferred.
+
+Final: minor (deferred), D1: initial light clients retain dark tray colors until a later body-class change; this is the existing Minor, not a new ruling.
+
+Declined to judge D2: Ruling: matching directions/collisions between local hand motion and remote native chat animation, and an octagonal collision simulator, are outside the approved scope — cost if wrong: clients see different trajectories/collisions while the reported results must still agree.
+
+Declined to judge D3: Ruling: elemental blast, inline damage and windowless paths remain native-only — cost if wrong: no manual tray interaction for those entries; native rolling is still available.
+
+Declined to judge D4: Ruling: browser QA follows the implementer's actual evidence and long-duration GPU/memory behavior remains unclaimed — cost if wrong: remaining live cases and long-session resources require manual verification and may need more fixes. Historical QA remains historical.
+
+Declined to judge D5: Ruling: support remains bounded to Foundry 14.368/PF2e 8.5.1/DsN 6.4.1; no other-version compatibility claim — cost if wrong: a later version may require adapter changes and new runtime checks. Reaffirms the earlier compatibility boundary.
+
+Declined to judge D6: Ruling: release/push/production installation are not authorized, so retain the local candidate — cost if wrong: publication and deployment wait for authorization and remaining verification. Reaffirms the earlier release boundary.
+
+Final local QA: bounded 0.5.1 browser acceptance completed in the isolated world; Fortune10/18→23 and mixed6/1/2/1→10 agree on both clients. Held receiver persistent0; all local persistent socket events0; sender chat animations0, receiver one per public message; cleanup0. Native Blind17 and public Fortune20 button paths have revision=null. Reload with world fixed dice=false and actual box/host replacement retain one tray; old gate=false/new gate=true. Idle5s tickerAdd0/playStep0. Growth renderScene44→3; warm single grab13.2ms, cold native creation220–330ms remains. RAF did not prove smooth150ms visual completion. See docs/qa-local-20261001.md and ignored QA evidence.
+
+Final local verification: npm test109/109, npm run check, git diff --check pass after the final per-box closure adjustment. Two Important fixes use RED→GREEN, no re-review. Temporary observations and viewport restored; QA PID1668423/tunnel6108 stopped; production PIDs688349/1621366 still running. Branch remains feature/octagonal-tray; no release, push or production install. Previously rejected temporary-workspace deletion was not retried.

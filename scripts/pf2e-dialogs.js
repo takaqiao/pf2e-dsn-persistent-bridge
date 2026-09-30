@@ -76,7 +76,7 @@ export function installPf2eBridge({onDialog,onClose,onFocus,getSnapshot,onSubmit
       const session=bindings.resolve(this),snapshot=session?getSnapshot(session.id):null;
       try {
         const result=await evaluateWithSnapshot(this,snapshot,wrapped,args);
-        if(session) onEvaluated(session,true);return result;
+        if(session) onEvaluated(session,true,this);return result;
       } catch(error) {if(session) onEvaluated(session,false);throw error;}
       finally{if(session) bindings.release(session.id);}
     });

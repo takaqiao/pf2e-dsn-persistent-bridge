@@ -56,6 +56,7 @@ test('partial physical values retain ordinal and RNG appends only once',async()=
     values:[{key:descriptors[1].key,value:6}]};
   await evaluateWithSnapshot(roll,snapshot,async()=>{term.roll();term.roll();term.roll();return roll;},[]);
   assert.deepEqual(term.results.map(r=>r.result),[4,6,4]);
+  assert.equal(roll.options.pdPhysicalComplete,false);
   assert.equal(term.roll,original);
 });
 test('same-face damage instances receive their own physical values',async()=>{
@@ -65,6 +66,7 @@ test('same-face damage instances receive their own physical values',async()=>{
     values:[{key:descriptors[0].key,value:1},{key:descriptors[1].key,value:6}]},
   async()=>{a.roll();b.roll();return roll;},[]);
   assert.deepEqual([a.results[0].result,b.results[0].result],[1,6]);
+  assert.equal(roll.options.pdPhysicalComplete,true);
 });
 test('evaluation failure restores an inherited Die.roll method',async()=>{
   const proto=makeDie(6),term=Object.assign(Object.create(proto),{results:[]}),
@@ -79,6 +81,7 @@ test('private or unbound evaluation cannot reuse a cloned physical marker',async
     values:[{key:describeDice(roll)[0].key,value:20}]},roll.evaluate.bind(roll),[]);
   assert.equal(roll.dice[0].results[0].result,11);
   assert.equal(roll.options.pdPhysicalRevision,undefined);
+  assert.equal(roll.options.pdPhysicalComplete,undefined);
 });
 test('descriptor mismatch rejects physical handoff rather than replacing dice with RNG',async()=>{
   const roll=makeCheckRoll(),descriptor={...describeDice(roll)[0],faces:6};
