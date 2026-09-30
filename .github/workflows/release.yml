@@ -45,7 +45,10 @@ jobs:
       - name: Build module.zip
         run: |
           # Foundry expects module.json at the zip root, not inside a subdir.
-          zip -r module.zip module.json scripts styles lang README.md LICENSE CHANGELOG.md
+          test -s assets/textures/walnut-basecolor.png
+          zip -r module.zip module.json scripts styles lang assets README.md LICENSE CHANGELOG.md
+          unzip -t module.zip
+          unzip -Z1 module.zip | grep -Fx assets/textures/walnut-basecolor.png
           ls -la module.zip
           unzip -l module.zip | head -30
 

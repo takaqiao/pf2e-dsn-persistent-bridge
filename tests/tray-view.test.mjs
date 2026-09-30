@@ -30,25 +30,77 @@ function viewHarness(createPreview=async()=>new THREE.Mesh(new THREE.BoxGeometry
   const camera=new THREE.PerspectiveCamera(20,1.25,.001,10);
   camera.position.set(0,1,0);camera.up.set(0,0,-1);camera.lookAt(0,0,0);camera.updateMatrixWorld();
   const scene=new THREE.Scene();let renders=0;
+  const renderer={target:null,pixelRatio:1,viewport:new THREE.Vector4(3,4,1000,800),currentViewport:new THREE.Vector4(3,4,1000,800),scissor:new THREE.Vector4(5,6,700,600),
+    scissorTest:true,color:new THREE.Color(0x123456),alpha:.4,autoClear:false,shadowMap:{autoUpdate:false},
+    getRenderTarget(){return this.target;},getActiveCubeFace:()=>0,getActiveMipmapLevel:()=>0,
+    setRenderTarget(target){this.target=target;if(target) this.currentViewport.copy(target.viewport);
+      else this.currentViewport.copy(this.viewport).multiplyScalar(this.pixelRatio);},
+    getViewport(out){return out.copy(this.viewport);},setViewport(...values){this.viewport.copy(values[0]?.isVector4?values[0]:new THREE.Vector4(...values));
+      this.currentViewport.copy(this.viewport).multiplyScalar(this.pixelRatio);},
+    getScissor(out){return out.copy(this.scissor);},setScissor(...values){this.scissor.copy(values[0]?.isVector4?values[0]:new THREE.Vector4(...values));},
+    getScissorTest(){return this.scissorTest;},setScissorTest(value){this.scissorTest=value;},
+    getClearColor(out){return out.copy(this.color);},getClearAlpha(){return this.alpha;},
+    setClearColor(color,alpha=this.alpha){this.color.set(color);this.alpha=alpha;},
+    clear(){},render(scene,camera){this.lastScene=scene;this.lastCamera=camera;this.lastTarget=this.target;this.lastViewport=this.currentViewport.toArray();
+      this.cachedPreviewCount=scene.children.find(child=>child.isGroup)?.children.find(child=>child.name==='previews')?.children.length??0;
+      if(this.fail) throw new Error('GPU draw failed');}};
   const element={style:{},dataset:{},classList:{toggle(){}},setAttribute(){},append(){},remove(){},
     addEventListener(){},removeEventListener(){}};
   const document={createElement:()=>({...element,style:{},dataset:{}}),body:{append(){}},
     defaultView:{innerWidth:1000,innerHeight:800,ResizeObserver,addEventListener(){},removeEventListener(){}},
     querySelector:()=>null};
-  const adapter={box:{camera,scene},boxGeneration:1,createPreview,
+  const adapter={box:{camera,scene,renderer},boxGeneration:1,createPreview,
     canvas:{getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})},
     mountTray(group){scene.add(group);return ()=>group.removeFromParent();},renderTray(){renders++;}};
   const view=createTrayView({adapter,THREE,document,getReservedRects:()=>[]});
-  return {view,scene,adapter,get renders(){return renders;}};
+  return {view,scene,adapter,renderer,get renders(){return renders;},
+    get tray(){return renderer.lastScene.children.find(child=>child.isGroup);}};
 }
-test('idle tray paints once and mounts real extruded octagonal geometry',()=>{
-  const h=viewHarness();h.view.mount();const group=h.scene.children[0];
-  assert.equal(group.children[0].geometry.type,'ExtrudeGeometry');
-  assert.equal(group.children[1].geometry.type,'ExtrudeGeometry');
-  assert.equal(group.rotation.x,0);
-  assert.ok(h.renders<=2);assert.equal(h.scene.children.length,1);
-  assert.ok(Math.abs(parseFloat(h.view.element.style.width)-220)<3);
+test('tray and dice share the desktop camera without changing the native projection',async()=>{
+  const h=viewHarness(),native=h.adapter.box.camera;
+  const before={projection:native.projectionMatrix.toArray(),world:native.matrixWorld.toArray()};
+  h.view.mount();const group=h.scene.children[0],camera=h.renderer.lastCamera;
+  assert.equal(group.children[0].geometry.type,'PlaneGeometry');
+  assert.notEqual(h.renderer.lastScene,h.scene);assert.notEqual(camera,native);
+  assert.equal(camera.fov,35);assert.equal(h.tray.rotation.x,0);
+  const direction=camera.position.clone().sub(new THREE.Vector3(0,.025,0)).normalize();
+  assert.ok(Math.abs(direction.y-.573576436351046)<1e-9);
+  assert.ok(Math.abs(direction.z-.819152044288992)<1e-9);
+  const nearLeft=new THREE.Vector3(-.4,.025,.4).project(camera);
+  const farLeft=new THREE.Vector3(-.4,.025,-.4).project(camera);
+  assert.ok(nearLeft.y<farLeft.y);assert.ok(Math.abs(nearLeft.x)>Math.abs(farLeft.x));
+  await h.view.show({mode:'public',descriptors:[{key:'a'}]});
+  assert.equal(h.tray.children.find(child=>child.name==='previews').children.length,1);
+  assert.deepEqual(native.projectionMatrix.toArray(),before.projection);
+  assert.deepEqual(native.matrixWorld.toArray(),before.world);
   h.view.dispose();assert.equal(h.scene.children.length,0);
+});
+test('220 pixel dock follows the projected shallow outline instead of a square hit area',()=>{
+  const h=viewHarness();h.view.mount();
+  assert.ok(h.renders<=2);assert.equal(h.scene.children.length,1);
+  const {width,height,top,left}=h.view.element.style;
+  assert.ok(Math.abs(parseFloat(width)-220)<1);
+  assert.ok(parseFloat(height)>120&&parseFloat(height)<170);
+  assert.ok(Math.abs(parseFloat(top)+parseFloat(height)-784)<1);
+  assert.ok(Math.abs(parseFloat(left)+parseFloat(width)-984)<1);
+  h.view.dispose();assert.equal(h.scene.children.length,0);
+});
+test('offscreen drawing restores native renderer state even when the draw fails',()=>{
+  for(const fail of [false,true]) {
+    const h=viewHarness(),r=h.renderer;r.fail=fail;
+    if(fail) assert.throws(()=>h.view.mount(),/GPU draw failed/);else h.view.mount();
+    assert.equal(r.target,null);assert.deepEqual(r.viewport.toArray(),[3,4,1000,800]);
+    assert.deepEqual(r.scissor.toArray(),[5,6,700,600]);assert.equal(r.scissorTest,true);
+    assert.equal(r.color.getHex(),0x123456);assert.equal(r.alpha,.4);
+    assert.equal(r.autoClear,false);assert.equal(r.shadowMap.autoUpdate,false);
+    r.fail=false;h.view.dispose();
+  }
+});
+test('high density displays draw the full offscreen texture without doubling its viewport',()=>{
+  const h=viewHarness();h.renderer.pixelRatio=2;h.view.mount();
+  const target=h.renderer.lastTarget;
+  assert.deepEqual(h.renderer.lastViewport,[0,0,target.width,target.height]);
+  h.view.dispose();
 });
 test('box-change layout moves canvas observation to the replacement host',()=>{
   const observed=new Set();
@@ -73,6 +125,17 @@ test('late previews cannot populate a different session or a rebuilt box',async(
   h.view.mount();const a=h.view.show({id:'a',generation:1,mode:'public',descriptors:[{key:'a'}]});
   await h.view.show({id:'b',generation:1,mode:'public',descriptors:[{key:'b'}]});
   wait.resolve();await a;assert.equal(meshes.at(-1).parent,null);
-  assert.equal(h.scene.children[0].children[2].children.length,1);
-  h.view.clear();assert.equal(h.scene.children[0].children[2].children.length,0);
+  assert.equal(h.tray.children.find(child=>child.name==='previews').children.length,1);
+  h.view.clear();assert.equal(h.tray.children.find(child=>child.name==='previews').children.length,0);
+});
+test('a failed model cannot hide successfully created previews from the cached tray',async()=>{
+  for(const failedKey of ['a','b']) {
+    const wait=deferred(),h=viewHarness(async descriptor=>{
+      if(descriptor.key===failedKey) throw new Error('model load failed');
+      await wait.promise;return new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial());
+    });h.view.mount();
+    const shown=assert.rejects(h.view.show({mode:'public',descriptors:[{key:'a'},{key:'b'}]}),/model load failed/);
+    wait.resolve();await shown;
+    assert.equal(h.renderer.cachedPreviewCount,1);h.view.dispose();
+  }
 });

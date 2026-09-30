@@ -4,6 +4,12 @@ A short, plain-language summary of what changed in each release. For full
 technical detail (race conditions, code references, internal reasoning),
 see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
 
+## 0.5.2 — Local candidate, unreleased
+
+- Added the approved desktop view: 55° from overhead, 35° FOV, no orbit or screen rotation. Tray geometry remains horizontal; tray dice share its perspective, while native throws keep the DsN camera.
+- Rebuilt the shallow rim with equal-height sides, small bevels and sloping inner walls. Added walnut grain along each rim segment, a dark wine liner and a narrow aged-brass inlay.
+- Tray updates reuse the DsN renderer and cache one local texture. No separate rendering loop or WebGL context is added.
+
 ## 0.5.1 — Local candidate, unreleased
 
 This candidate follows the user's approved revision to the octagonal tray.

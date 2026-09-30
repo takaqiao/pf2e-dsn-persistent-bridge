@@ -160,7 +160,13 @@ if(globalThis.Hooks) {
       await registerPf2eColorsets(game.dice3d);
       bridge=createBridge({versions:v,getSetting:readSetting,onPhysicalRoll:roll=>suppression?.remember(roll),pf2e:options=>installPf2eBridge(options),
         dice3d:options=>createDsnAdapter({dice3d:game.dice3d,...options}),
-        view:async({adapter})=>createTrayView({adapter,THREE:await import(foundry.utils.getRoute('modules/dice-so-nice/libs/three.module.min.js'))}),
+        view:async({adapter})=>{
+          const THREE=await import(foundry.utils.getRoute('modules/dice-so-nice/libs/three.module.min.js'));
+          const woodTexture=await new THREE.TextureLoader().loadAsync(foundry.utils.getRoute('modules/pf2e-dsn-persistent-bridge/assets/textures/walnut-basecolor.png'));
+          woodTexture.colorSpace=THREE.SRGBColorSpace;
+          woodTexture.anisotropy=Math.min(4,adapter.box.renderer.capabilities.getMaxAnisotropy());
+          return createTrayView({adapter,THREE,woodTexture});
+        },
         gestures:options=>createGestureController(options)});
       await bridge.enable();suppression??=installMessageSuppression();
       game.modules.get(MOD_ID).api={diagnose:()=>bridge.diagnose(),runChecks};
