@@ -24,3 +24,7 @@ Task 7: Ruling: guest pendingId uses pd-session: prefix and only those remote na
 
 Task 7: Ruling: QA tools cannot emit a sustained native keyDown/keyUp; keyboard long hold, blur and unsupported blast/inline UI retain unit/source evidence only, explicitly listed as unverified browser cases — core mouse/native/privacy/multiplayer flows are tested and candidate is local-only — cost if wrong: these less common paths need owner runtime confirmation before release.
 
+Final: Ruling: compatibility beyond Foundry14.368/PF2e8.5.1/DsN6.4.1 was declined by reviewer — candidate support stays bounded to the tested runtimes; native guards handle unavailable contracts — cost if wrong: another version can require an adapter update and fresh browser verification.
+
+Final: Ruling: public release and long-duration GPU/memory behavior were declined by reviewer — deliver the authorized local candidate, with remaining live matrix and extended resource measurements explicitly pending — cost if wrong: long-session resource use or untested interaction failures may require further fixes before publishing.
+

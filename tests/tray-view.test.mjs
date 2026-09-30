@@ -26,14 +26,14 @@ test('preview cleanup never disposes borrowed geometry or materials',()=>{
   const children=[mesh],parent={remove(item){children.splice(children.indexOf(item),1);}};
   releasePreview(parent,mesh);assert.deepEqual(children,[]);assert.equal(disposed,0);
 });
-function viewHarness(createPreview=async()=>new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial())) {
+function viewHarness(createPreview=async()=>new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial()),ResizeObserver) {
   const camera=new THREE.PerspectiveCamera(20,1.25,.001,10);
   camera.position.set(0,1,0);camera.up.set(0,0,-1);camera.lookAt(0,0,0);camera.updateMatrixWorld();
   const scene=new THREE.Scene();let renders=0;
   const element={style:{},dataset:{},classList:{toggle(){}},setAttribute(){},append(){},remove(){},
     addEventListener(){},removeEventListener(){}};
   const document={createElement:()=>({...element,style:{},dataset:{}}),body:{append(){}},
-    defaultView:{innerWidth:1000,innerHeight:800,addEventListener(){},removeEventListener(){}},
+    defaultView:{innerWidth:1000,innerHeight:800,ResizeObserver,addEventListener(){},removeEventListener(){}},
     querySelector:()=>null};
   const adapter={box:{camera,scene},boxGeneration:1,createPreview,
     canvas:{getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})},
@@ -48,6 +48,16 @@ test('idle tray paints once and mounts real extruded octagonal geometry',()=>{
   assert.ok(h.renders<=2);assert.equal(h.scene.children.length,1);
   assert.ok(Math.abs(parseFloat(h.view.element.style.width)-220)<3);
   h.view.dispose();assert.equal(h.scene.children.length,0);
+});
+test('box-change layout moves canvas observation to the replacement host',()=>{
+  const observed=new Set();
+  class ResizeObserver {
+    observe(host){observed.add(host);}unobserve(host){observed.delete(host);}disconnect(){observed.clear();}
+  }
+  const h=viewHarness(undefined,ResizeObserver);h.view.mount();const old=h.adapter.canvas;
+  assert.ok(observed.has(old));h.adapter.canvas={getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})};
+  h.view.layout();assert.equal(observed.has(old),false);assert.ok(observed.has(h.adapter.canvas));
+  h.view.dispose();assert.equal(observed.size,0);
 });
 test('a preview created for an old box cannot join the new scene',async()=>{
   const wait=deferred(),mesh=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial());

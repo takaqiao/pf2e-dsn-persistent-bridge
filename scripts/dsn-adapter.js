@@ -12,7 +12,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   getSessionForDie=()=>null,user=globalThis.game?.user,utils=globalThis.foundry?.utils,
   getActor=id=>globalThis.game?.actors?.get(id),
   interaction=globalThis.canvas?.mouseInteractionManager}) {
-  let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null,lifecycleBound=false;
+  let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null,lifecycleBound=false,trayCanvas=null;
   const owned=new Map(),pending=new Set(),meshBatch=new WeakMap(),patches=[],trayGroups=new Set();
   const remoteTasks=new Set(),remoteChains=new Map();
   const current=record=>!disposed&&record.boxGeneration===boxGeneration&&
@@ -22,6 +22,11 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     object[key]=replacement;patches.push({object,key,original,hadOwn,replacement});
   }
   const lookup=mesh=>owned.get(mesh.userData?.persistentId)??getSessionForDie(mesh.userData?.persistentId);
+  function refreshTrayCanvas() {
+    const next=trayGroups.size?dice3d?.canvas:null;if(next===trayCanvas) return;
+    trayCanvas?.classList.remove('pd-tray-mounted');trayCanvas=next;
+    trayCanvas?.classList.add('pd-tray-mounted');
+  }
   function bindLifecycle() {
     if(lifecycleBound) return;lifecycleBound=true;
     patch(dice3d.persistent,'handleMessage',original=>request=>{
@@ -146,7 +151,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     patch(box,'replayRemoteThrow',original=>async (meshes,...args)=>{
       const generation=boxGeneration,ownerBox=box,m=ownerBox.persistentDiceManager;
       const targets=m.persistentDiceVisibility==='mine'?
-        meshes.filter(d=>d.userData.ownerUserId!==user.id):[];
+        meshes.filter(d=>d.userData.ownerUserId!==user.id&&d.userData.guestPendingId?.startsWith(TASK_PREFIX)):[];
       if(targets.length) {
         for(const mesh of targets) mesh.parent.visible=true;
         await ownerBox.physicsWorker.exec('setCollisionResponse',{ids:targets.map(d=>d.id),enabled:true});
@@ -258,7 +263,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
         !m?.onQueueThrow||!m?.matchSFX||!e?.handlePersistentThrowCompletion||
         !e?.createDiceMesh||!next?.replayRemoteThrow||!next?.renderScene||
         !dice3d.exports?.Utils||!dice3d.DiceFactory?.getAppearanceForDice||!utils||!user) return false;
-      if(box===next) return true;
+      if(box===next) {refreshTrayCanvas();return true;}
       const previous=box;
       if(previous) {
         remoteTasks.clear();remoteChains.clear();
@@ -269,6 +274,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       if(disposed||dice3d.box!==next) return false;
       box=next;++boxGeneration;bindQueue();bindScene();bindLifecycle();
       for(const group of trayGroups) box.scene.add(group);
+      refreshTrayCanvas();
       onBoxChanged(box,boxGeneration);return true;
     },
     async createPreview(descriptor) {
@@ -346,15 +352,15 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     },
     mountTray(group) {
       const owner=box;trayGroups.add(group);owner.scene.add(group);
-      dice3d.canvas.classList.add('pd-tray-mounted');owner.renderScene();
+      refreshTrayCanvas();owner.renderScene();
       return ()=>{trayGroups.delete(group);box?.scene.remove(group);
-        if(!trayGroups.size) dice3d.canvas.classList.remove('pd-tray-mounted');box?.renderScene();};
+        refreshTrayCanvas();box?.renderScene();};
     },renderTray(){if(!disposed) box?.renderScene();},
     async dispose() {
       if(disposed) return;disposed=true;++boxGeneration;remoteTasks.clear();remoteChains.clear();await cancelGrab();
       for(const id of new Set([...owned.values()].map(r=>r.session.id))) await api.removeSession(id);
       for(const group of trayGroups) box?.scene.remove(group);
-      trayGroups.clear();dice3d?.canvas?.classList.remove('pd-tray-mounted');
+      trayGroups.clear();refreshTrayCanvas();
       for(const {object,key,original,hadOwn,replacement} of patches.reverse()) if(object[key]===replacement) {
         if(hadOwn) object[key]=original;else delete object[key];
       }

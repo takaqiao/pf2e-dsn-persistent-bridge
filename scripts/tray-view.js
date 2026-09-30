@@ -37,7 +37,7 @@ export function createTrayView({adapter,THREE,document=globalThis.document,
   })}) {
   const {Group,Shape,Path,ExtrudeGeometry,MeshStandardMaterial,Mesh,Box3,Vector3,Vector2,Raycaster,Plane}=THREE;
   const group=new Group(),previews=new Group(),resources=[],window=document.defaultView;
-  let unmount=null,epoch=0,size=220,disposed=false,observer=null,themeObserver=null;
+  let unmount=null,epoch=0,size=220,disposed=false,observer=null,observedCanvas=null,themeObserver=null;
   const floorMaterial=new MeshStandardMaterial({color:0x363b3a,roughness:1,metalness:0});
   const rimMaterial=new MeshStandardMaterial({color:0x646963,roughness:.75,metalness:.12});
   resources.push(floorMaterial,rimMaterial);
@@ -76,6 +76,10 @@ export function createTrayView({adapter,THREE,document=globalThis.document,
   }
   function layout() {
     if(disposed||!unmount||!adapter.box.camera) return;
+    if(observer&&observedCanvas!==adapter.canvas) {
+      if(observedCanvas) observer.unobserve(observedCanvas);
+      observedCanvas=adapter.canvas;observer.observe(observedCanvas);
+    }
     const c=adapter.canvas.getBoundingClientRect();
     const viewport={left:Math.max(0,c.left),top:Math.max(0,c.top),
       width:Math.min(window.innerWidth,right(c))-Math.max(0,c.left),
@@ -112,7 +116,7 @@ export function createTrayView({adapter,THREE,document=globalThis.document,
     mount() {
       if(disposed) return;unmount?.();unmount=adapter.mountTray(group);document.body.append(element);layout();
       if(!observer&&window.ResizeObserver) {
-        observer=new window.ResizeObserver(layout);observer.observe(adapter.canvas);
+        observer=new window.ResizeObserver(layout);observedCanvas=adapter.canvas;observer.observe(observedCanvas);
         for(const selector of ['#sidebar','#ui-right','#hotbar']) {
           const e=document.querySelector(selector);if(e) observer.observe(e);
         }

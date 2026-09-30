@@ -21,7 +21,7 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
   const scene={children:[],add(group){this.children.push(group);},remove(group){
     this.children=this.children.filter(x=>x!==group);}};
   const mesh=(type,opts={})=>({id:++id,notation:{type},userData:{persistentId:`die-${id}`,
-    ownerUserId:opts.ownerUserId??'u',linkGroupId:opts.linkGroupId,
+    ownerUserId:opts.ownerUserId??'u',guestPendingId:opts.guest?.pendingId,linkGroupId:opts.linkGroupId,
     linkGroupSecondary:opts.linkGroupSecondary??false,digitPlace:opts.digitPlace},
     parent:{visible:true,position:{x:0,y:0,z:0}},geometry:{},material:{}});
   const worker={async exec(name,args){runtime.physics.push([name,args]);}};
@@ -65,7 +65,8 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
     fromPositionPct:p=>({x:p.x-.5,z:.5-p.y}),toPositionPct:(x,z)=>({x:x+.5,y:.5-z}),
     replayRemoteThrow:(...args)=>manager.replayRemoteThrow(...args),
     fadeOutEphemeral(){},clearScene(){},setScene(){},async update(){}};
-  runtime.canvas={classList:{add(){},remove(){}},style:{},
+  const classes=new Set();
+  runtime.canvas={classList:{add:name=>classes.add(name),remove:name=>classes.delete(name),contains:name=>classes.has(name)},style:{},
     getBoundingClientRect:()=>({left:0,top:0,width:1000,height:800})};
   runtime._buildDiceBox=function(){return this.box;};runtime._fadeOutCanvas=()=>{};
   runtime._cancelCanvasFade=()=>{};

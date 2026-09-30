@@ -77,14 +77,25 @@ test('cancel during an asynchronous grab removes late constraints without throwi
   const removed=h.runtime.physics.filter(([name])=>name==='removeConstraint');
   assert.ok(removed.length);assert.deepEqual(removed.at(-1)[1].ids,[h.primary.id]);
 });
-test('mine mode briefly reveals public foreign dice and restores the current preference',async()=>{
-  const h=await harness(),box=h.runtime.box,foreign=h.runtime.mesh('d6',{ownerUserId:'other'});
+test('mine mode briefly reveals public foreign task dice and restores the current preference',async()=>{
+  const h=await harness(),box=h.runtime.box,foreign=h.runtime.mesh('d6',{
+    ownerUserId:'other',guest:{pendingId:'pd-session:foreign-task'}});
   box.persistentDiceManager.persistentDiceList.push(foreign);
   box.persistentDiceManager.persistentDiceVisibility='mine';foreign.parent.visible=false;
   await box.replayRemoteThrow([foreign],{},new Map([[foreign,3]]),[]);
   assert.equal(foreign.parent.visible,false);
   const collision=h.runtime.physics.filter(([name])=>name==='setCollisionResponse');
   assert.deepEqual(collision.map(([,args])=>args),[{ids:[foreign.id],enabled:true},{ids:[foreign.id],enabled:false}]);
+});
+test('mine mode keeps unrelated foreign decorative dice hidden without collision overrides',async()=>{
+  const runtime=makeDsnRuntime(),box=runtime.box,foreign=runtime.mesh('d6',{ownerUserId:'other'});
+  const seen=[];box.replayRemoteThrow=async meshes=>seen.push(meshes.map(d=>d.parent.visible));
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled:()=>{}});
+  await adapter.ready();box.persistentDiceManager.persistentDiceList.push(foreign);
+  box.persistentDiceManager.persistentDiceVisibility='mine';foreign.parent.visible=false;
+  await box.replayRemoteThrow([foreign],{},new Map([[foreign,3]]),[]);
+  assert.deepEqual(seen,[[false]]);assert.equal(foreign.parent.visible,false);
+  assert.deepEqual(runtime.physics.filter(([name])=>name==='setCollisionResponse'),[]);
 });
 test('a cold remote task model finishes creation before its throw and removal',async()=>{
   const wait=deferred(),h=await harness({remoteCreateWait:wait}),native=h.runtime.persistent;
@@ -132,6 +143,18 @@ test('an empty mounted tray never starts physics or invokes native canvas hiding
   await adapter.ready();adapter.mountTray({});runtime._fadeOutCanvas(1000);
   assert.equal(hides,0);assert.equal(fades,1);assert.deepEqual(runtime.physics,[]);
   await adapter.dispose();runtime._fadeOutCanvas(1000);assert.equal(hides,1);
+});
+test('replacing both canvas and box transfers tray visibility protection and removes it on teardown',async()=>{
+  const runtime=makeDsnRuntime(),replacement=makeDsnRuntime(),oldCanvas=runtime.canvas;
+  runtime._buildDiceBox=function(){this.box=replacement.box;this.canvas=replacement.canvas;};
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled:()=>{}});
+  await adapter.ready();const group={};adapter.mountTray(group);
+  assert.equal(oldCanvas.classList.contains('pd-tray-mounted'),true);
+  runtime._buildDiceBox();await adapter.ready();
+  assert.equal(replacement.box.scene.children.includes(group),true);
+  assert.equal(replacement.canvas.classList.contains('pd-tray-mounted'),true);
+  assert.equal(oldCanvas.classList.contains('pd-tray-mounted'),false);
+  await adapter.dispose();assert.equal(replacement.canvas.classList.contains('pd-tray-mounted'),false);
 });
 test('cleanup of an old generation leaves a newer batch in the same dialog intact',async()=>{
   const h=await harness();h.s.replace({mode:'public',descriptors:h.s.descriptors});h.s.startBatch();
