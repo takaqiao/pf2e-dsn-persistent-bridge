@@ -105,3 +105,22 @@ test('actor appearance overrides player defaults in both preview and physical di
   await h.adapter.spawn(h.s,h.s.descriptors[0],{x:.5,y:.5});
   assert.equal(h.runtime.spawnCalls.at(-1).opts.appearance.diceColor,'#aa00aa');
 });
+test('synchronous box rebuild removes old groups and binds the ready replacement',async()=>{
+  const h=await harness(),old=h.runtime.box,group={};h.adapter.mountTray(group);
+  const next=makeDsnRuntime().box;h.runtime._buildDiceBox=function(){this.box=next;return 'sync-result';};
+  // Install lifecycle wrappers with the initial ready call, not by replacing a patched function.
+  const runtime=makeDsnRuntime();runtime._buildDiceBox=function(){this.box=next;return 'sync-result';};
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled:()=>{}});
+  await adapter.ready();adapter.mountTray(group);const before=runtime.box;
+  assert.equal(runtime._buildDiceBox(),'sync-result');await adapter.ready();
+  assert.equal(before.scene.children.includes(group),false);assert.equal(next.scene.children.includes(group),true);
+  await adapter.dispose();assert.equal(next.scene.children.includes(group),false);
+});
+test('an empty mounted tray never starts physics or invokes native canvas hiding',async()=>{
+  const runtime=makeDsnRuntime();let hides=0,fades=0;
+  runtime._fadeOutCanvas=()=>hides++;runtime.box.fadeOutEphemeral=()=>fades++;
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled:()=>{}});
+  await adapter.ready();adapter.mountTray({});runtime._fadeOutCanvas(1000);
+  assert.equal(hides,0);assert.equal(fades,1);assert.deepEqual(runtime.physics,[]);
+  await adapter.dispose();runtime._fadeOutCanvas(1000);assert.equal(hides,1);
+});

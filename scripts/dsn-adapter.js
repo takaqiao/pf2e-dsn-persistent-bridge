@@ -7,7 +7,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   getSessionForDie=()=>null,user=globalThis.game?.user,utils=globalThis.foundry?.utils,
   getActor=id=>globalThis.game?.actors?.get(id),
   interaction=globalThis.canvas?.mouseInteractionManager}) {
-  let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null;
+  let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null,lifecycleBound=false;
   const owned=new Map(),pending=new Set(),meshBatch=new WeakMap(),patches=[],trayGroups=new Set();
   const current=record=>!disposed&&record.boxGeneration===boxGeneration&&
     record.session.mode==='public'&&record.session.isCurrent(record.token);
@@ -16,6 +16,33 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     object[key]=replacement;patches.push({object,key,original,hadOwn,replacement});
   }
   const lookup=mesh=>owned.get(mesh.userData?.persistentId)??getSessionForDie(mesh.userData?.persistentId);
+  function bindLifecycle() {
+    if(lifecycleBound) return;lifecycleBound=true;
+    patch(dice3d,'_buildDiceBox',original=>(...args)=>{
+      const result=original(...args);
+      void api.ready().catch(error=>console.warn('Persistent Dice: box rebuild',error));
+      return result;
+    });
+    patch(dice3d,'_fadeOutCanvas',original=>(duration,complete)=>{
+      if(!trayGroups.size) return original(duration,complete);
+      dice3d._cancelCanvasFade();box.fadeOutEphemeral(duration);
+    });
+  }
+  function bindScene() {
+    const owner=box;
+    patch(owner,'clearScene',original=>(...args)=>{
+      ++boxGeneration;for(const group of trayGroups) owner.scene.remove(group);
+      for(const record of owned.values()) record.session.cancel('scene cleared');
+      void cancelGrab().catch(()=>{});owned.clear();return original(...args);
+    });
+    const restored=()=>{
+      if(disposed||owner!==box) return;
+      for(const group of trayGroups) if(group.parent!==owner.scene) owner.scene.add(group);
+      onBoxChanged(owner,boxGeneration);
+    };
+    patch(owner,'setScene',original=>(...args)=>{const result=original(...args);restored();return result;});
+    patch(owner,'update',original=>async(...args)=>{const result=await original(...args);restored();return result;});
+  }
   function capture(data) {
     if(!data.heldDice?.length||!data.primaries?.length||!data.roll) return null;
     const records=data.heldDice.map(lookup),first=records[0];
@@ -178,7 +205,16 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
         !e?.createDiceMesh||!next?.replayRemoteThrow||!next?.renderScene||
         !dice3d.exports?.Utils||!dice3d.DiceFactory?.getAppearanceForDice||!utils||!user) return false;
       if(box===next) return true;
-      box=next;++boxGeneration;bindQueue();onBoxChanged(box,boxGeneration);return true;
+      const previous=box;
+      if(previous) {
+        for(const group of trayGroups) previous.scene.remove(group);
+        for(const record of owned.values()) record.session.cancel('box rebuilt');
+        await cancelGrab();owned.clear();
+      }
+      if(disposed||dice3d.box!==next) return false;
+      box=next;++boxGeneration;bindQueue();bindScene();bindLifecycle();
+      for(const group of trayGroups) box.scene.add(group);
+      onBoxChanged(box,boxGeneration);return true;
     },
     async createPreview(descriptor) {
       const owner=box,generation=boxGeneration;
@@ -255,8 +291,8 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     mountTray(group) {
       const owner=box;trayGroups.add(group);owner.scene.add(group);
       dice3d.canvas.classList.add('pd-tray-mounted');owner.renderScene();
-      return ()=>{trayGroups.delete(group);owner.scene.remove(group);
-        if(!trayGroups.size) dice3d.canvas.classList.remove('pd-tray-mounted');owner.renderScene();};
+      return ()=>{trayGroups.delete(group);box?.scene.remove(group);
+        if(!trayGroups.size) dice3d.canvas.classList.remove('pd-tray-mounted');box?.renderScene();};
     },renderTray(){if(!disposed) box?.renderScene();},
     async dispose() {
       if(disposed) return;disposed=true;++boxGeneration;await cancelGrab();
