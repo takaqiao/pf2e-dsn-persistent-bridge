@@ -38,6 +38,8 @@ export function installPf2eBridge({onDialog,onClose,onFocus,getSnapshot,onSubmit
       warn('Dialog dice unavailable',error.message);
       result={descriptors:[],fingerprint:'unavailable',canBind:false};
     }
+    const actorId=app.context?.actor?.id??app.context?.self?.actor?.id;
+    if(actorId) result.descriptors=result.descriptors.map(d=>({...d,actorId}));
     const session=onDialog(app,result);
     if(session?.id&&result.canBind) {
       if(app.constructor.name==='CheckModifiersDialog') bindings.armCheck(app,session);

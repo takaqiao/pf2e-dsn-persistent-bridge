@@ -17,19 +17,21 @@ test('unsupported blast and inline damage are rejected before grabbing',()=>{
   assert.equal(supportsPhysicalDialog(inline),false);
 });
 test('radio changes update descriptors without native rerender and dispose removes listeners',()=>{
-  const callbacks=new Map(),registered=new Map(),seen=[];
+  const callbacks=new Map(),registered=new Map(),seen=[],actors=[];
   const hooks={on(name,fn){callbacks.set(name,fn);return name;},off(name){callbacks.delete(name);}};
   const wrapper={register(id,path,fn){registered.set(path,fn);},unregister(id,path){registered.delete(path);}};
   class Parser {constructor(formula){this.dice=[makeDie(20,11,formula.startsWith('2')?2:1)];}}
   const root=new EventTarget();root.matches=()=>true;root.querySelector=()=>null;
-  const app=new CheckModifiersDialog();app.element=[root];
+  const app=new CheckModifiersDialog();app.element=[root];app.context.actor={id:'actor'};
   const dispose=installPf2eBridge({hooks,wrapper,game:{pf2e:{Check:{}}},
     config:{Dice:{rolls:[]},PF2E:{}},RollClass:Parser,
-    onDialog:(app,data)=>seen.push(data.descriptors.length),onClose:()=>{},onFocus:()=>{},
+    onDialog:(app,data)=>{seen.push(data.descriptors.length);actors.push(data.descriptors[0]?.actorId);},
+    onClose:()=>{},onFocus:()=>{},
     getSnapshot:()=>null});
   callbacks.get('renderCheckModifiersDialog')(app,[root],{});
   app.context.rollTwice='keep-higher';root.dispatchEvent(new Event('change'));
   assert.deepEqual(seen,[1,2]);
+  assert.deepEqual(actors,['actor','actor']);
   dispose();root.dispatchEvent(new Event('change'));
   assert.deepEqual(seen,[1,2]);assert.equal(callbacks.size,0);assert.equal(registered.size,0);
 });

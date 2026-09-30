@@ -1,0 +1,107 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createDsnAdapter} from '../scripts/dsn-adapter.js';
+import {createSession} from '../scripts/session.js';
+import {makeDsnRuntime,deferred} from './fixtures/dsn-runtime.mjs';
+const descriptor=faces=>({key:'a',termPath:'0/0',ordinal:0,faces,flavor:'fire'});
+async function harness(options={},faces=20) {
+  const runtime=makeDsnRuntime(options),landings=[],failures=[];
+  const s=createSession({id:'s',appId:1,userId:'u',kind:'check',mode:'public',descriptors:[descriptor(faces)]});
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,
+    getActor:()=>options.actor??null,onSettled:(...args)=>landings.push(args),
+    onFailure:(...args)=>failures.push(args),onBoxChanged:()=>{}});
+  assert.equal(await adapter.ready(),true);
+  const token=s.startBatch(),primary=await adapter.spawn(s,s.descriptors[0],{x:.5,y:.5});
+  return {runtime,adapter,s,token,primary,landings,failures};
+}
+test('native queue success without simulation cannot settle',async()=>{
+  const h=await harness({simulate:false});
+  await h.runtime.triggerOwnedThrow([h.primary],[7]);
+  assert.deepEqual(h.landings,[]);assert.equal(h.failures.length,1);
+});
+test('confirmed native landing supplies frozen logical values and suppresses only its chat',async()=>{
+  const h=await harness();await h.runtime.triggerOwnedThrow([h.primary],[19]);
+  assert.deepEqual(h.landings,[[h.token,[{persistentId:h.primary.userData.persistentId,value:19}]]]);
+  assert.deepEqual(h.runtime.chats,[]);assert.equal(h.runtime.lastEnqueue.roll,null);
+  assert.equal(h.runtime.sfxRolls[0].total,19);
+});
+test('merged decorative throw retains its own chat even on an owned chat carrier',async()=>{
+  const runtime=makeDsnRuntime(),other=runtime.mesh('d6',{ownerUserId:'u'});
+  const messages=[];
+  const h=await harness({mergeExtra:{mesh:other,roll:{total:3,async toMessage(){messages.push('decorative');}}}});
+  await h.runtime.triggerOwnedThrow([h.primary],[12]);
+  assert.deepEqual(messages,['decorative']);assert.equal(h.landings.length,1);
+});
+test('unrelated throw passes its auxiliary roll unchanged',async()=>{
+  const h=await harness(),roll={total:12};
+  await h.runtime.box.persistentDiceManager.onQueueThrow({heldDice:[],primaries:[],
+    velocity:{},forcedByMesh:new Map(),roll});
+  assert.equal(h.runtime.lastEnqueue.roll,roll);assert.deepEqual(h.landings,[]);
+});
+test('dropped queue and old generation do not settle',async()=>{
+  const h=await harness({queueResult:false});await h.runtime.triggerOwnedThrow([h.primary],[8]);
+  assert.deepEqual(h.landings,[]);
+  const next=await harness();next.s.replace({mode:'blind',descriptors:next.s.descriptors});
+  await next.runtime.triggerOwnedThrow([next.primary],[20]);assert.deepEqual(next.landings,[]);
+});
+test('spawn uses reserved guests and an invalidated late mesh is removed',async()=>{
+  const waiting=deferred(),runtime=makeDsnRuntime({spawnWait:waiting});
+  const s=createSession({id:'s',appId:1,userId:'u',kind:'check',mode:'public',descriptors:[descriptor(20)]});
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,
+    onSettled:()=>{},onBoxChanged:()=>{}});await adapter.ready();s.startBatch();
+  const spawn=adapter.spawn(s,s.descriptors[0],{x:.4,y:.3});s.cancel('close');waiting.resolve();
+  assert.equal(await spawn,null);assert.equal(runtime.removed.length,1);
+  assert.deepEqual(runtime.spawnCalls[0].opts.guest,{pendingId:'s',reservedForUserId:'u'});
+});
+test('d100 uses linked digit meshes but submits one logical value',async()=>{
+  const h=await harness({},100),meshes=h.runtime.box.persistentDiceManager.persistentDiceList;
+  assert.deepEqual(meshes.map(d=>d.notation.type),['d100','d10']);
+  await h.runtime.triggerOwnedThrow(meshes,[100]);
+  assert.deepEqual(h.landings[0][1],[{persistentId:h.primary.userData.persistentId,value:100}]);
+});
+test('preview avoids the board physics cache and reflects current appearance flags',async()=>{
+  const h=await harness();await h.adapter.createPreview(descriptor(6));
+  assert.equal(h.runtime.previewArgs.cache.type,'bridge-tray-preview');
+  assert.equal(h.runtime.previewArgs.appearance.diceColor,'#123456');
+  h.runtime.flags.appearance.global.diceColor='#987654';
+  await h.adapter.createPreview(descriptor(6));
+  assert.equal(h.runtime.previewArgs.appearance.diceColor,'#987654');
+});
+test('cancel during an asynchronous grab removes late constraints without throwing',async()=>{
+  const h=await harness();h.runtime.grabWait=deferred();
+  const grab=h.adapter.beginGrab(h.s,[h.primary],{clientX:500,clientY:400});
+  const cancel=h.adapter.cancelGrab();h.runtime.grabWait.resolve();await Promise.all([grab,cancel]);
+  assert.equal(h.runtime.box.inputHandler.mouse.constraintDown,false);
+  assert.deepEqual(h.runtime.box.inputHandler.mouse.heldPersistentDice,[]);
+  assert.equal(h.runtime.lastEnqueue,undefined);
+  const removed=h.runtime.physics.filter(([name])=>name==='removeConstraint');
+  assert.ok(removed.length);assert.deepEqual(removed.at(-1)[1].ids,[h.primary.id]);
+});
+test('mine mode briefly reveals public foreign dice and restores the current preference',async()=>{
+  const h=await harness(),box=h.runtime.box,foreign=h.runtime.mesh('d6',{ownerUserId:'other'});
+  box.persistentDiceManager.persistentDiceList.push(foreign);
+  box.persistentDiceManager.persistentDiceVisibility='mine';foreign.parent.visible=false;
+  await box.replayRemoteThrow([foreign],{},new Map([[foreign,3]]),[]);
+  assert.equal(foreign.parent.visible,false);
+  const collision=h.runtime.physics.filter(([name])=>name==='setCollisionResponse');
+  assert.deepEqual(collision.map(([,args])=>args),[{ids:[foreign.id],enabled:true},{ids:[foreign.id],enabled:false}]);
+});
+
+test('failed compound secondary removes primary and its ownership record',async()=>{
+  const runtime=makeDsnRuntime(),original=runtime.persistent.spawn;let calls=0;
+  runtime.persistent.spawn=async(...args)=>++calls===2?null:original(...args);
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,
+    onSettled:()=>{},onBoxChanged:()=>{}});await adapter.ready();
+  const s=createSession({id:'s',appId:1,userId:'u',kind:'check',mode:'public',descriptors:[descriptor(100)]});
+  s.startBatch();assert.equal(await adapter.spawn(s,s.descriptors[0],{x:.5,y:.5}),null);
+  assert.equal(adapter.ownedCount,0);assert.equal(runtime.removed.length,1);
+});
+test('actor appearance overrides player defaults in both preview and physical dice',async()=>{
+  const actor={getFlag:(scope,key)=>key==='appearance'?{global:{diceColor:'#aa00aa'}}:{}};
+  const h=await harness({actor});await h.adapter.createPreview({...descriptor(6),actorId:'actor'});
+  assert.equal(h.runtime.previewArgs.appearance.diceColor,'#aa00aa');
+  await h.adapter.removeSession('s');
+  h.s.replace({mode:'public',descriptors:[{...descriptor(6),actorId:'actor'}]});h.s.startBatch();
+  await h.adapter.spawn(h.s,h.s.descriptors[0],{x:.5,y:.5});
+  assert.equal(h.runtime.spawnCalls.at(-1).opts.appearance.diceColor,'#aa00aa');
+});
