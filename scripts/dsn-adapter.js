@@ -1,6 +1,10 @@
 const COMPOUND={100:[['d100',10],['d10',1]],
   1000:[['d1000',100],['d100',10],['d10',1]],
   10000:[['d10000',1000],['d1000',100],['d100',10],['d10',1]]};
+export function shouldSuppressRevision(roll,recordedRevision) {
+  return typeof recordedRevision==='string'&&recordedRevision.length>0&&
+    roll.options?.pdPhysicalRevision===recordedRevision;
+}
 
 /** All DsN 6.4.1 private integration lives here. Previews never enter physics. */
 export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure=()=>{},

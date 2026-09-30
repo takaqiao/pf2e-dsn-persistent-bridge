@@ -1,88 +1,19 @@
-# PF2e × DSN Persistent Dice Bridge
+# Persistent Dice
 
-A Foundry VTT module that lets you use **Dice So Nice persistent dice you physically throw on the canvas** as the input for **PF2e** roll dialogs (skill checks, attack rolls, damage rolls, rerolls).
+画布右下角的八角骰盘，用于 PF2e 的检定与伤害。
 
-When you open a PF2e roll dialog the module spawns the exact dice you need on the canvas; you drag and throw them; the result feeds the dialog's slots; the roll auto-submits. The PF2e check / damage chat message is the only message you see — the dice are physical, not RNG.
+1. 打开原生检定或伤害窗口，骰盘会显示本次需要的骰子。
+2. 在骰盘内长按，拖出抓起整把骰子；松手或甩出投掷。
+3. 全部落定后默认自动提交。原生 Roll 按钮随时可用。
 
-## How it works
+短按不会投掷。Esc、失焦或关闭窗口取消抓取。键盘聚焦骰盘后按住空格，松开投掷。
 
-1. Open any PF2e roll dialog (skill check, attack, damage, reroll).
-2. The module auto-spawns the needed task dice (`1×d20` for a check, `1d8 + 2d6` for damage, etc.) on the canvas, locked to you.
-3. Throw them physically with DSN's drag-and-flick.
-4. Wait for the dice to settle visually.
-5. Slots fill, dialog auto-submits, PF2e posts the result.
+公开投掷使用 DsN 显示的同一结果。DsN 在释放时生成随机数；手势影响运动，不影响随机分布。原生按钮仅采用当前会话已确认落定的结果，其余骰子按原生规则补齐。
 
-Decorative dice you spawn manually are untouched — they remain free toys, never pulled into a roll.
+私密检定保持原生流程。支持普通检定、原生武器/近战武器和法术伤害窗口；元素冲击、内联伤害及无标准窗口的重投保持原生流程。
 
-## Features
+设置：启用、骰盘尺寸、自动提交、详细日志。升级沿用现有启用和自动提交偏好，旧设置保留在数据库以便回退。
 
-- **Auto-spawn** task dice matching the roll's formula (any number of any face count).
-- **Owned-only consumption** — only module-spawned task dice feed slots; your decorative dice are safe.
-- **Decorative dice hidden** during a dialog so the canvas only shows what you need to throw.
-- **Locked to dialog opener** — DSN's own `userData.lockedBy` field is set + socket-synced so other players cannot drag your task dice. One-click to unlock for the current dialog.
-- **Auto-submit** when all slots fill, with a tunable settle buffer so the message appears only after the dice visibly stop.
-- **Suppresses the redundant DSN throw message** during a dialog (the PF2e result message is the single chat output).
-- **Reroll support** via `pf2e.preReroll` — throw your reroll die first, then click reroll.
-- **Partial submission** — empty slots fall back to PF2e's RNG, so you can throw some dice and let others auto-roll.
-- **Result injection** uses per-Die `_roll` patching, so PF2e modifiers (`kh`, `kl`, `r1`, `xo`, `min`, `max`) all work correctly.
+本地候选版本 **0.5.0**，验证目标：Foundry 14.368、PF2e 8.5.1、Dice So Nice 6.4.1、libWrapper 1.13.5.1。尚未发布。
 
-## Requirements
-
-- **Foundry VTT** v13 or v14
-- **PF2e system** v7+
-- **Dice So Nice!** v6.0.0+ (with `Persistent Dice` and `Allow Interactivity` enabled in DSN settings)
-- **libWrapper** module (auto-prompt on install if missing)
-
-## Installation
-
-In Foundry's module browser, paste this manifest URL:
-
-```
-https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest/download/module.json
-```
-
-## Settings
-
-| Setting | Default | Effect |
-|---|---|---|
-| Enable bridge | on | Master toggle |
-| Auto-spawn task dice | on | Spawn needed dice when a dialog opens |
-| Only consume module-spawned dice | on | Decorative dice are not pulled into rolls |
-| Hide decorative dice during dialog | on | Visually hide other persistent dice while a dialog is up |
-| Lock task dice to dialog opener | on | Other players can't drag your task dice |
-| Suppress standalone DSN throw message | on | Only the PF2e result message appears during a dialog |
-| Auto-submit when all slots filled | on | Roll the dialog automatically once full |
-| Auto-submit delay (ms) | 1000 | Pause between slot fill and submit |
-| Settle buffer (ms) | 3500 | Extra wait for dice to visually stop |
-| Apply to rerolls | on | Hero point / fortune rerolls also use canvas dice |
-| Require all slots filled | off | If on, partial fills fall back to full RNG |
-| Consume any player's dice | off | Cooperative-play mode |
-
-## Known interactions / compatibility
-
-### Verified compatible
-
-- **Dice So Nice** 6.2.0 through 6.2.4 — full feature parity. Verified by source-level diff of the DSN internals the bridge depends on (InputHandler, persistentDiceManager, Dice3D.spawnPersistentDie, the visibility filter): unchanged across 6.2.2–6.2.4 (those releases only added PBR materials, atlas packing, and GLB fixes — all additive). The bridge passes explicit spawn positions, so DSN's spawn-area preference setting doesn't override them.
-- **PF2e system** through v8.x. Dialogs are still V1 Applications (`foundry.appv1.api.Application`), so the bridge's render / close hooks fire normally.
-- **PF2e Dice Flavor Fix** — bridge auto-detects it and skips registering its own duplicate colorsets.
-
-### Auto-handled module conflicts
-
-- **[RNG Guardian](https://github.com/7H3LaughingMan/rng-guardian)** verifies dice rolls against a recorded PCG seed; the bridge deliberately predetermines roll values (the whole point), so every bridge-mediated roll would fail Guardian's verification and trigger a "roll was altered" warning. The bridge auto-detects Guardian on startup and (per the **RNG Guardian compatibility** world setting, default `auto`) appends `CheckRoll` + `DamageRoll` to Guardian's "Ignored Rolls" list, so verification skips them cleanly. Guardian-side architectural limits (its verification function is module-scoped and the local `createChatMessage` hook can't be bypassed without modifying Guardian itself) mean the per-roll precision isn't achievable from the bridge side alone — the class-level ignore is the cleanest mechanism Guardian exposes. Tradeoff: pure non-bridge `CheckRoll` / `DamageRoll` invocations (macros, RNG-fallback paths) also skip Guardian. If that matters for your table, set the bridge's `rngGuardianMode` setting to `warn` or `off` and configure Guardian's ignore list yourself.
-
-## Limitations / known gaps
-
-- **Reroll** uses a "throw first, then click reroll" workflow — `pf2e.preReroll` is synchronous so we can't open a wait-prompt dialog mid-reroll.
-- **d100** is supported via DSN's link-group dice (one tens d10 + one ones d10 wired together); confirmation on edge cases (special PF2e d100 modifiers) is welcome.
-- The module is system-locked to PF2e and intentionally does nothing on other systems.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-## Credits
-
-Built on top of:
-- [Dice So Nice!](https://gitlab.com/riccisi/foundryvtt-dice-so-nice) by Simone Ricciardi & JDW
-- [Pathfinder Second Edition](https://github.com/foundryvtt/pf2e) system
-- [libWrapper](https://github.com/ruipin/fvtt-lib-wrapper) by ruipin
+开发检查：`npm ci`、`npm test`、`npm run check`。模块 API 提供 `diagnose()` 和不改角色/世界设置的 `runChecks()`。

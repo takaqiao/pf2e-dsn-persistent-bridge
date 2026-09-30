@@ -1,320 +1,163 @@
-import { MOD_ID, isEnabled, log, warn } from "./constants.js";
-import { registerSettings } from "./settings.js";
-import { compat } from "./compat.js";
-import { installEvaluateWrapper } from "./evaluate-wrapper.js";
-import { onRenderCheckDialog, onRenderDamageDialog, onCloseDialog } from "./ui-injector.js";
-import { startDsnListener } from "./dsn-listener.js";
-import { onPreReroll } from "./reroll-handler.js";
-import { registerDsnSuppressor } from "./dsn-suppressor.js";
-import { registerSocket } from "./socket.js";
-import { installVisibilityPatch } from "./dsn-visibility.js";
-import { sweepOrphanTaskDice } from "./spawn-helper.js";
-import { startForeignMirrorCleaner } from "./foreign-mirror-cleaner.js";
-import { installOpenerThrowHook } from "./ephemeral-mirror.js";
-import { installRightClickThrow } from "./right-click-throw.js";
-import { installShakeSensitivity } from "./shake-sensitivity.js";
-import { installRestrictPersistentSpawn } from "./restrict-persistent-spawn.js";
-import { checkAndConfigureGuardian } from "./rng-guardian-compat.js";
-import { maybeShowWelcome } from "./welcome.js";
-import { registerPf2eColorsets } from "./pf2e-colorsets.js";
+import {MOD_ID,SETTINGS,getSetting as readSetting,warn} from './constants.js';
+import {createSession} from './session.js';
+import {createDsnAdapter,shouldSuppressRevision} from './dsn-adapter.js';
+import {createTrayView} from './tray-view.js';
+import {createGestureController} from './gestures.js';
+import {installPf2eBridge} from './pf2e-dialogs.js';
+import {registerSettings,migrateSettings} from './settings.js';
+import {registerPf2eColorsets} from './pf2e-colorsets.js';
+import {describeDice} from './descriptors.js';
+import {evaluateWithSnapshot} from './result-bridge.js';
 
-Hooks.once("init", () => {
-  registerSettings();
-  const loader = foundry?.applications?.handlebars?.loadTemplates ?? globalThis.loadTemplates;
-  loader?.([`modules/${MOD_ID}/templates/slot-tray.hbs`]);
-  log("init complete");
-});
+/** Dependency factories make enabling create fresh resources after a full teardown. */
+export function createBridge({pf2e,dice3d,view,gestures,getSetting,userId=globalThis.game?.user?.id,
+  versions={},getMessageMode=()=>globalThis.game?.settings.get('core','messageMode')??'public'}) {
+  const apps=new Map(),records=new Map(),snapshots=new Map();
+  let adapter=null,tray=null,controller=null,uninstall=null,enabled=false,enabling=null,active=null;
+  const modeOf=app=>app.context?.messageMode??getMessageMode();
+  const formOf=app=>{const root=app.element?.[0]??app.element;
+    return root?.matches?.('form')?root:root?.querySelector?.('form');};
+  const showing=()=>active?.session&&!['submitted','cancelled'].includes(active.session.status)?active.session:null;
+  function paint() {
+    if(!tray) return;
+    const s=showing();
+    if(s&&['grabbing','flying'].includes(s.status)) {tray.clear();tray.setState('grabbing');return;}
+    void tray.show(s);
+    if(active&&!active.canBind) tray.setState('unsupported');
+  }
+  function focus(app) {
+    const record=apps.get(app);if(!record) return;
+    if(active!==record&&showing()&&['grabbing','flying'].includes(showing().status)) return;
+    active=record;paint();
+  }
+  function submit(app) {
+    const record=apps.get(app);if(!record?.session||record.submitting) return;
+    record.submitting=true;const snapshot=record.session.prepareSubmit();
+    if(snapshot) snapshots.set(record.session.id,snapshot);
+    void controller?.cancel();void adapter.removeSession(record.session.id);paint();
+  }
+  function openDialog(app,result) {
+    if(!enabled) return null;
+    let record=apps.get(app);const mode=modeOf(app);
+    if(record) {
+      if(record.session&&record.session.status!=='submitted'&&
+        (record.fingerprint!==result.fingerprint||record.session.mode!==mode||record.canBind!==result.canBind)) {
+        const old={sessionId:record.session.id,generation:record.session.generation};
+        record.session.replace({mode,descriptors:result.canBind?result.descriptors:[]});
+        void controller?.cancel();void adapter.removeSession(record.session.id,old);
+      }
+      record.fingerprint=result.fingerprint;record.canBind=result.canBind;focus(app);return record.session;
+    }
+    const session=result.canBind?createSession({id:globalThis.crypto.randomUUID(),appId:app.id,userId,
+      kind:app.constructor.name==='CheckModifiersDialog'?'check':'damage',mode,descriptors:result.descriptors}):null;
+    record={app,session,fingerprint:result.fingerprint,canBind:result.canBind,submitting:false};
+    apps.set(app,record);if(session) records.set(session.id,record);focus(app);return session;
+  }
+  function closeDialog(app,submitted) {
+    const record=apps.get(app);if(!record) return;
+    if(submitted) submit(app);
+    else if(record.session) {
+      record.session.cancel('closed');records.delete(record.session.id);snapshots.delete(record.session.id);
+      void controller?.cancel();void adapter.removeSession(record.session.id);
+    }
+    apps.delete(app);record.app=null;
+    if(active===record) {active=[...apps.values()].at(-1)??null;paint();}
+  }
+  const api={openDialog,changeDialog:openDialog,closeDialog,getSession:showing,
+    getSnapshot(id) {
+      if(!snapshots.has(id)) {const r=records.get(id);if(r?.app) submit(r.app);}
+      return snapshots.get(id)??null;
+    },
+    async enable() {
+      if(enabled) return;if(enabling) return enabling;
+      enabling=(async()=>{
+        if(getSetting(SETTINGS.enabled)===false) return;
+        adapter=dice3d({onSettled(token,values) {
+          const record=records.get(token.sessionId);if(!record?.session.settle(token,values)) return;
+          if(record.session.complete&&getSetting(SETTINGS.autoSubmitOnFill)!==false&&!record.submitting)
+            formOf(record.app)?.requestSubmit();
+        },onFailure(token) {
+          const r=records.get(token.sessionId);if(!r?.session.isCurrent(token)) return;
+          r.session.replace({mode:r.session.mode,descriptors:r.session.descriptors});
+          void adapter.removeSession(r.session.id,token);paint();
+        },onBoxChanged() {if(tray) {tray.layout();paint();}}});
+        if(!await adapter.ready()) {await adapter.dispose();adapter=null;throw new Error('DsN interface unavailable');}
+        tray=await view({adapter});tray.mount();tray.setSize(getSetting(SETTINGS.traySize)??220);
+        enabled=true;
+        controller=gestures({element:tray.element,adapter,getSession:showing,onState(state) {
+          if(state==='held') {tray.clear();tray.setState('grabbing');}
+          else if(state==='armed') tray.setState('armed');
+          else if(state==='idle') paint();
+        }});
+        uninstall=pf2e({onDialog:openDialog,onFocus:focus,onClose:closeDialog,onSubmit:submit,
+          getSnapshot:api.getSnapshot,onEvaluated(session,success) {
+            snapshots.delete(session.id);const r=records.get(session.id);records.delete(session.id);
+            if(r?.app) apps.delete(r.app);void adapter.removeSession(session.id);
+            if(active===r) {active=[...apps.values()].at(-1)??null;paint();}
+            if(!success) globalThis.ui?.notifications?.warn(globalThis.game?.i18n.localize('PD.NotSubmitted'));
+          }});
+      })().finally(()=>{enabling=null;});return enabling;
+    },
+    async disable() {
+      if(enabling) await enabling.catch(()=>{});enabled=false;uninstall?.();uninstall=null;
+      for(const r of records.values()) r.session.cancel('disabled');
+      await controller?.();controller=null;apps.clear();records.clear();snapshots.clear();active=null;
+      tray?.dispose();tray=null;await adapter?.dispose();adapter=null;
+    },
+    refresh(){tray?.setSize(getSetting(SETTINGS.traySize)??220);},
+    diagnose(){return {versions,capabilities:{enabled,dsn:Boolean(adapter),dialogs:Boolean(uninstall)},
+      sessionCount:records.size,ownedInstanceCount:adapter?.ownedCount??0};}
+  };return api;
+}
 
-Hooks.once("setup", () => {
-  if (!compat.checkLibWrapper()) {
-    warn("lib-wrapper missing — bridge inactive");
-    return;
-  }
-  if (!compat.checkPF2e()) {
-    warn("PF2e system not active — bridge inactive");
-    return;
-  }
-  installEvaluateWrapper();
-  log("setup: evaluate wrapper installed");
-});
+export function installMessageSuppression(hooks=globalThis.Hooks,game=globalThis.game) {
+  const revisions=new Map(),ids=[];
+  const record=message=>revisions.set(message.id,(message.rolls??[]).map(r=>r.options?.pdPhysicalRevision??null));
+  for(const name of ['createChatMessage','updateChatMessage']) ids.push([name,hooks.on(name,record)]);
+  ids.push(['deleteChatMessage',hooks.on('deleteChatMessage',m=>revisions.delete(m.id))]);
+  ids.push(['diceSoNiceMessagePreProcess',hooks.on('diceSoNiceMessagePreProcess',(id,interception)=>{
+    const message=game.messages.get(id);
+    // DsN's create hook runs first; observe the current incoming revision here too.
+    if(message) record(message);
+    const known=revisions.get(id);
+    if(message?.rolls.some((r,i)=>shouldSuppressRevision(r,known?.[i]))) interception.willTrigger3DRoll=false;
+  })]);
+  return ()=>{for(const [name,id] of ids) hooks.off(name,id);revisions.clear();};
+}
 
-Hooks.once("ready", () => {
-  if (!compat.isFullyReady()) {
-    warn("dependencies not satisfied; UI will still render in disabled state");
-  }
-  Hooks.on("renderCheckModifiersDialog", onRenderCheckDialog);
-  Hooks.on("renderDamageModifierDialog", onRenderDamageDialog);
-  Hooks.on("closeCheckModifiersDialog", onCloseDialog);
-  Hooks.on("closeDamageModifierDialog", onCloseDialog);
-  Hooks.on("pf2e.preReroll", onPreReroll);
-  registerDsnSuppressor();
-  registerSocket();
-  startDsnListener();
-  installVisibilityPatch();
-  // Initial sweep: a receiver client that picked up a broadcast task die
-  // from another user's dialog and never saw the cleanup (e.g. that user
-  // refreshed mid-dialog) would otherwise carry the orphan forever. Run
-  // once on every client at startup so accumulated orphans get cleaned.
-  try { sweepOrphanTaskDice(); } catch (e) { warn("startup orphan sweep failed", e); }
-  // Periodic safety sweep — catches orphans that accumulate when a user
-  // plays for hours without opening another dialog. Without this, the
-  // only sweep triggers are `ready` (once per session) and `dialog open`
-  // (manual). Set to every 5 minutes — long enough to be free; short
-  // enough that a stuck mesh doesn't linger an entire session. Quiet
-  // when there's nothing to do (sweep only logs if it removes anything).
-  //
-  // Guard against re-registration: Foundry's `Hooks.once("ready", ...)`
-  // is single-shot, but if module init runs twice for any reason (re-
-  // import in a reload-without-refresh flow) we'd double up the timer.
-  if (!globalThis.__dsnBridgePeriodicSweep) {
-    globalThis.__dsnBridgePeriodicSweep = setInterval(() => {
-      if (!isEnabled()) return;
-      if (!game.dice3d) return;
-      try { sweepOrphanTaskDice(); } catch (e) { warn("periodic orphan sweep failed", e); }
-    }, 5 * 60 * 1000);
-  }
-  // Also sweep immediately when any user disconnects — receivers can
-  // clean their foreign-broadcast task dice from the now-offline
-  // opener without waiting up to 5 min for the periodic sweep. Foundry
-  // fires `userConnected(user, connected)` on every connection change.
-  Hooks.on("userConnected", (user, connected) => {
-    if (connected) return; // only react to disconnects
-    if (!isEnabled() || !game.dice3d) return;
-    try { sweepOrphanTaskDice(); } catch (e) { warn("disconnect-triggered sweep failed", e); }
-  });
-  // Receiver-side cleanup: when our visibility is "mine" / "none", remove
-  // foreign task dice as soon as they've settled, so post-throw idle on
-  // hidden-viewer clients drops to ~200 ms instead of "until opener closes
-  // the dialog".
-  startForeignMirrorCleaner();
-  // Opener-side hook: when DSN broadcasts a throw event for one of our
-  // task dice, also broadcast a `task-mirror-throw` socket message so
-  // hidden-viewer receivers can play an ephemeral 3D throw animation
-  // (since they removed the persistent mesh on receive).
-  installOpenerThrowHook();
-  // Right-click on an owned persistent die → throw it in a random
-  // direction with min velocity (no shake required).
-  installRightClickThrow();
-  // Shake-to-throw sensitivity override. Patches DSN's hardcoded threshold
-  // of 5 with our user-configurable 1–10. Same prototype-patch pattern.
-  installShakeSensitivity();
-  // Block players from spawning their own decorative persistent dice via
-  // DSN's toolbox. Bridge task-die spawns bypass via `_dsnBridgeAllowed`
-  // marker on opts. GM is always allowed.
-  installRestrictPersistentSpawn();
-  // RNG Guardian compatibility: detect the module and (per the rngGuardianMode
-  // setting) auto-add CheckRoll/DamageRoll to its `ignoredRolls` list so
-  // bridge-managed predetermined rolls don't trigger Guardian's "altered"
-  // false positives on every roll. Fire-and-forget (async).
-  checkAndConfigureGuardian().catch((e) => warn("Guardian compat check failed", e));
-  // Register colorsets for PF2e damage types DSN doesn't ship by name
-  // (electricity / sonic / vitality / void / spirit / mental / bleed /
-  // slashing / piercing / bludgeoning / untyped). DSN's damageTypeMap
-  // lookup falls back to the colorset registry when no per-type override
-  // is configured, so registering these makes per-flavor styling actually
-  // work for PF2e users out-of-box. `diceSoNiceReady` ensures dice3d
-  // exists; `addColorset` is idempotent here via our `existing` check.
-  if (game.dice3d) {
-    registerPf2eColorsets();
-  } else {
-    Hooks.once("diceSoNiceReady", () => registerPf2eColorsets());
-  }
-  // First-time welcome: self-whispered chat message describing how to
-  // use the module. Re-sends when WELCOME_VERSION changes in welcome.js.
-  maybeShowWelcome().catch((e) => warn("welcome dispatch failed", e));
-  // Expose a diagnostic helper so testers seeing the "DSN not active" banner
-  // can run `game.modules.get("pf2e-dsn-persistent-bridge").api.diagnose()`
-  // in the console and report exactly which check failed.
-  const mod = game.modules.get(MOD_ID);
-  if (mod) {
-    mod.api = {
-      diagnose() {
-        const diag = compat.diagnoseDsn();
-        const report = {
-          ok: diag.ok,
-          reason: diag.reason ?? null,
-          dsnModuleActive: !!game.modules.get("dice-so-nice")?.active,
-          dsnModuleVersion: game.modules.get("dice-so-nice")?.version ?? null,
-          persistentDice: tryGet("dice-so-nice", "persistentDice"),
-          allowInteractivity: tryGet("dice-so-nice", "allowInteractivity"),
-          hasDice3d: !!game.dice3d,
-          hasBox: !!game.dice3d?.box,
-          hasPersistentManager: !!game.dice3d?.box?.persistentDiceManager,
-          libWrapperActive: compat.checkLibWrapper(),
-          systemId: game.system?.id,
-        };
-        console.log("[pf2e-dsn-persistent-bridge] diagnose →", report);
-        return report;
-      },
-      /**
-       * End-to-end diagnostic for the per-damage-type colorset path.
-       * Reports: which PF2e damage types are in DSN's br registry; what
-       * the resolved appearance object looks like for a given dieType +
-       * damage type; and whether `enableFlavorColorset` is on.
-       *
-       * Usage in console:
-       *   game.modules.get("pf2e-dsn-persistent-bridge").api.diagnoseFlavor("d6", "fire")
-       *   game.modules.get("pf2e-dsn-persistent-bridge").api.diagnoseFlavor("d6", "vitality")
-       */
-      /**
-       * Inspect spawned task dice on canvas — check whether the bridge
-       * actually tagged each one with its damage type, and what the
-       * mesh's runtime material name looks like.
-       */
-      diagnoseTaskDice() {
-        const list = game.dice3d?.box?.persistentDiceList ?? [];
-        const taskDice = list.filter((m) => m?.userData?.dsnPF2eBridge_owned === true);
-        const myId = game.user?.id ?? null;
-        const report = taskDice.map((m) => {
-          const openerId = m.userData?.dsnPF2eBridge_openerUserId ?? null;
-          return {
-            dieType: m.notation?.compositeType ?? m.notation?.type,
-            persistentId: m.userData?.persistentId,
-            flavorTag: m.userData?.dsnPF2eBridge_flavor ?? null,
-            // DSN's own ownerUserId (the user who originally spawned the
-            // mesh) — present on every persistent die.
-            ownerUserId: m.userData?.ownerUserId,
-            // Bridge identification tags — added in 0.4.6 (mirror) +
-            // 0.4.7 (task-mark) + 0.4.8 (local opener). Sweep uses
-            // these to decide whether to keep / remove this mesh.
-            bridgeDialogId: m.userData?.dsnPF2eBridge_dialogId ?? null,
-            bridgeOpenerUserId: openerId,
-            bridgeOpenerLocal: openerId === myId,
-            bridgeOpenerOnline: openerId ? !!game.users?.get(openerId)?.active : null,
-            bridgeSecretMirror: m.userData?.dsnPF2eBridge_secretMirror === true,
-            materialColor: m.material?.color?.getHexString?.(),
-            materialName: m.material?.name,
-            materialUuid: m.material?.uuid,
-          };
-        });
-        console.log(`[pf2e-dsn-persistent-bridge] ${taskDice.length} task die(s) on canvas:`, report);
-        return report;
-      },
-      /**
-       * Inspect the currently-open damage/check dialog to see what
-       * formulaData / button-text structure PF2e is exposing so we can
-       * verify our flavor extraction logic.
-       */
-      diagnoseDialog() {
-        const allApps = foundry?.applications?.instances ?? new Map();
-        const dialogs = [];
-        for (const [, app] of allApps) {
-          const cls = app?.constructor?.name;
-          if (cls === "CheckModifiersDialog" || cls === "DamageModifierDialog") {
-            dialogs.push(app);
-          }
-        }
-        if (dialogs.length === 0) {
-          // Fallback: scan ui.windows (V1 apps in older Foundry)
-          for (const id in (ui.windows ?? {})) {
-            const app = ui.windows[id];
-            const cls = app?.constructor?.name;
-            if (cls === "CheckModifiersDialog" || cls === "DamageModifierDialog") {
-              dialogs.push(app);
-            }
-          }
-        }
-        if (dialogs.length === 0) {
-          console.log("[pf2e-dsn-persistent-bridge] No PF2e dialog open. Open a damage roll dialog first.");
-          return null;
-        }
-        const reports = dialogs.map((dialog) => {
-          const root = dialog?.element?.[0] ?? dialog?.element;
-          const btn = root?.querySelector?.("form.check-modifiers-content > button[type=submit]");
-          const formulaData = dialog?.formulaData;
-          return {
-            class: dialog.constructor.name,
-            isCritical: dialog?.isCritical,
-            buttonText: btn?.textContent ?? "(no button)",
-            formulaDataExists: !!formulaData,
-            formulaDataKeys: formulaData ? Object.keys(formulaData) : null,
-            base: formulaData?.base?.map((e) => ({
-              diceNumber: e?.diceNumber,
-              dieSize: e?.dieSize,
-              damageType: e?.damageType,
-              category: e?.category,
-              terms: e?.terms?.map((t) => ({
-                dice: t?.dice ? { number: t.dice.number, faces: t.dice.faces } : null,
-                modifier: t?.modifier,
-              })),
-            })),
-            dice: formulaData?.dice?.map((d) => ({
-              diceNumber: d?.diceNumber ?? d?.override?.diceNumber,
-              dieSize: d?.dieSize ?? d?.override?.dieSize,
-              damageType: d?.damageType,
-              enabled: d?.enabled,
-            })),
-            contextDamageType: dialog?.context?.damageType,
-            contextOutcome: dialog?.context?.outcome,
-            damageInstanceType: dialog?.damage?.roll?.instances?.[0]?.type,
-            damageInstanceCount: dialog?.damage?.roll?.instances?.length,
-          };
-        });
-        console.log(`[pf2e-dsn-persistent-bridge] ${dialogs.length} open dialog(s):`, reports);
-        console.log("=== JSON ===");
-        console.log(JSON.stringify(reports, (k, v) => {
-          // Strip Foundry/PIXI/THREE objects from JSON output
-          if (v && typeof v === "object" && (v.constructor?.name || "").match(/^(Actor|Token|Application|Scene|Roll|DamageInstance|Mesh|Object3D)/)) {
-            return `<${v.constructor.name}>`;
-          }
-          return v;
-        }, 2));
-        return reports;
-      },
-      diagnoseFlavor(dieType = "d6", flavor = "fire") {
-        const dice3d = game.dice3d;
-        if (!dice3d) return console.log("dice3d not ready"), null;
-        const Dice3DCls = dice3d.constructor;
-        const factory = dice3d.DiceFactory;
-        const colorsets = dice3d.exports?.COLORSETS ?? {};
-        const PF2E_ALL = ["acid", "bleed", "bludgeoning", "cold", "electricity", "fire", "force", "mental", "piercing", "poison", "slashing", "sonic", "spirit", "untyped", "vitality", "void"];
-        const colorsetCoverage = {};
-        for (const t of PF2E_ALL) {
-          colorsetCoverage[t] = colorsets[t] ? `✓ (${colorsets[t].category})` : "✗ MISSING";
-        }
-        const enableFlavor = dice3d.userConfig?.enableFlavorColorset;
-        const damageTypeMap = tryGet("dice-so-nice", "damageTypeMap") ?? {};
-        const raw = Dice3DCls.APPEARANCE(game.user);
-        const term = { options: { type: flavor, flavor } };
-        const resolved = factory.getAppearanceForDice(raw, dieType, term);
-        const report = {
-          enableFlavorColorset: enableFlavor,
-          flavorFixActive: !!game.modules.get("pf2e-dice-flavor-fix")?.active,
-          colorsetCoverage,
-          damageTypeMapKeys: Object.keys(damageTypeMap),
-          query: { dieType, flavor },
-          resolved: {
-            colorset: resolved?.colorset,
-            foreground: resolved?.foreground,
-            background: Array.isArray(resolved?.background) ? `[${resolved.background.length} colors]` : resolved?.background,
-            texture: typeof resolved?.texture === "object" ? resolved?.texture?.name : resolved?.texture,
-            material: resolved?.material,
-            isGhost: resolved?.isGhost,
-            system: resolved?.system,
-            systemSettings: resolved?.systemSettings ? Object.keys(resolved.systemSettings) : null,
-          },
-          rawUserGlobal: {
-            system: raw?.global?.system,
-            colorset: raw?.global?.colorset,
-            labelColor: raw?.global?.labelColor,
-            diceColor: raw?.global?.diceColor,
-          },
-          rawDieType: raw?.[dieType] ? {
-            system: raw[dieType].system,
-            colorset: raw[dieType].colorset,
-          } : null,
-          // Check if a "basic" or PF2e-specific system might be intercepting
-          knownSystems: factory ? Array.from(factory.systems?.keys?.() ?? []) : [],
-        };
-        console.log("[pf2e-dsn-persistent-bridge] diagnoseFlavor →", report);
-        return report;
-      },
-    };
-  }
-  log("ready: hooks active");
-});
+export async function runChecks(RollClass=globalThis.Roll) {
+  const results=[];
+  for(const [formula,value] of [['1d20',17],['1d100',100]]) {
+    const roll=new RollClass(formula),descriptors=describeDice(roll),snapshot={id:'diagnostic',mode:'public',descriptors,
+      values:[{key:descriptors[0].key,value}]};
+    await evaluateWithSnapshot(roll,snapshot,()=>roll.evaluate(),[]);
+    results.push({name:formula,passed:roll.dice[0].results[0].result===value});
+  }return results;
+}
 
-function tryGet(scope, key) {
-  try { return game.settings.get(scope, key); }
-  catch { return "<not registered>"; }
+if(globalThis.Hooks) {
+  let bridge=null,suppression=null,sync=Promise.resolve();
+  const versions=()=>({foundry:game.version,pf2e:game.system.version,dsn:game.modules.get('dice-so-nice')?.version});
+  const minimum=(actual,required)=>actual&&!foundry.utils.isNewerVersion(required,actual);
+  function synchronize() {
+    sync=sync.then(async()=>{
+      if(readSetting(SETTINGS.enabled)===false) {await bridge?.disable();suppression?.();suppression=null;return;}
+      if(bridge?.diagnose().capabilities.enabled) {bridge.refresh();return;}
+      const v=versions();
+      if(game.system.id!=='pf2e'||!game.modules.get('lib-wrapper')?.active||!game.modules.get('dice-so-nice')?.active||
+        !minimum(v.foundry,'14.361')||!minimum(v.pf2e,'8.5.1')||!minimum(v.dsn,'6.4.1')) return;
+      await registerPf2eColorsets(game.dice3d);
+      bridge=createBridge({versions:v,getSetting:readSetting,pf2e:options=>installPf2eBridge(options),
+        dice3d:options=>createDsnAdapter({dice3d:game.dice3d,...options}),
+        view:async({adapter})=>createTrayView({adapter,THREE:await import(foundry.utils.getRoute('modules/dice-so-nice/libs/three.module.min.js'))}),
+        gestures:options=>createGestureController(options)});
+      await bridge.enable();suppression??=installMessageSuppression();
+      game.modules.get(MOD_ID).api={diagnose:()=>bridge.diagnose(),runChecks};
+      await migrateSettings();
+    }).catch(error=>{warn(error);void bridge?.disable();});return sync;
+  }
+  Hooks.once('init',()=>registerSettings(()=>void synchronize()));
+  Hooks.once('ready',()=>{game.modules.get(MOD_ID).api={diagnose:()=>bridge?.diagnose()??{versions:versions(),capabilities:{enabled:false},sessionCount:0,ownedInstanceCount:0},runChecks};void synchronize();});
+  Hooks.on('diceSoNiceReady',()=>void synchronize());
+  for(const name of ['canvasReady','collapseSidebar']) Hooks.on(name,()=>bridge?.refresh());
 }
