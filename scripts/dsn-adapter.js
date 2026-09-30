@@ -1,3 +1,5 @@
+import {selectThrowDirection,applyThrowDirection} from './throw-direction.js';
+
 const COMPOUND={100:[['d100',10],['d10',1]],
   1000:[['d1000',100],['d100',10],['d10',1]],
   10000:[['d10000',1000],['d1000',100],['d100',10],['d10',1]]};
@@ -7,14 +9,15 @@ export function shouldSuppressRevision(roll,recordedRevision) {
     roll.options?.pdPhysicalRevision===recordedRevision;
 }
 
-/** All DsN 6.4.1 private integration lives here. Previews never enter physics. */
+/** All DsN 6.4.1 private integration lives here. Previews borrow materials without adding bodies. */
 export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure=()=>{},
   getSessionForDie=()=>null,user=globalThis.game?.user,utils=globalThis.foundry?.utils,
   getActor=id=>globalThis.game?.actors?.get(id),
   interaction=globalThis.canvas?.mouseInteractionManager,hooks=globalThis.Hooks,
   nativePersistentEnabled=()=>globalThis.game?.settings.get('dice-so-nice','persistentDice')}) {
-  let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null,lifecycleBound=false,trayCanvas=null;
+  let box=null,boxGeneration=0,disposed=false,held=null,grabEpoch=0,grabPromise=null,grabCleanup=0,lifecycleBound=false,trayCanvas=null;
   const owned=new Map(),pending=new Set(),meshBatch=new WeakMap(),patches=[],trayGroups=new Set(),features=[],removingLegacy=new Set(),releases=new Map(),moves=new Set();
+  const previewMaterials=new WeakMap(),previewRequests=new WeakMap();
   const taskDiePrefix=`pd-die:${user?.id}:`,isTaskId=id=>typeof id==='string'&&id.startsWith(taskDiePrefix);
   let legacyHook=null;
   const localGuest=opts=>opts?.guest?.pendingId?.startsWith(TASK_PREFIX)&&
@@ -128,8 +131,29 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   }
   function bindQueue() {
     const owner=box,manager=owner.persistentDiceManager,engine=owner.throwEngine;
+    let nativeRelease=null;
+    patch(owner.physicsWorker,'exec',original=>(name,args)=>{
+      if(name!=='setCollisionResponse'||!args?.enabled||!held||held.box!==owner||held.ending||!current(held)) return original(name,args);
+      // Native animations restore ghost collisions after completion and SFX. Keep a current grab isolated.
+      const ids=new Set(held.meshes.map(mesh=>mesh.id)),remaining=args.ids.filter(id=>!ids.has(id));
+      return remaining.length?original(name,{...args,ids:remaining}):Promise.resolve();
+    });
+    patch(engine,'getVectors',original=>(...args)=>applyThrowDirection(original,...args));
+    patch(owner.inputHandler,'_activatePreRoll',original=>(...args)=>{
+      const mouse=owner.inputHandler.mouse;
+      if(!mouse.heldPersistentDice.length||!mouse.heldPersistentDice.every(mesh=>isTaskId(mesh.userData?.persistentId))) return original(...args);
+      mouse.preRoll=true;
+      for(const mesh of mouse.heldPersistentDice) mesh.userData.preRollRates=null;
+    });
+    patch(owner.inputHandler,'_computeThrowVelocity',original=>(...args)=>{
+      if(!nativeRelease?.direction||!owner.inputHandler.mouse.heldPersistentDice.some(mesh=>
+        nativeRelease.meshes.includes(mesh))) return original(...args);
+      const {x,y}=nativeRelease.direction;
+      return {x:x*.384,y:.74656,z:y*.384};
+    });
     patch(owner,'onMouseMove',original=>(...args)=>{
       if(!owner.inputHandler.mouse.heldPersistentDice.some(mesh=>isTaskId(mesh.userData?.persistentId))) return original(...args);
+      if(!held||held.ending||held.box!==owner) return;
       const operation=Promise.resolve(original(...args));moves.add(operation);
       return operation.finally(()=>moves.delete(operation));
     });
@@ -174,10 +198,25 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       for(const [batch,list] of groups) original(list,sfx,batch.roll);
     });
     patch(box,'onMouseUp',original=>async event=>{
-      if(!held) return original(event);
+      if(!held) return nativeRelease&&owner.inputHandler.mouse.heldPersistentDice.some(mesh=>
+        nativeRelease.meshes.includes(mesh))?true:original(event);
       if(event?.type==='pointercancel'||!current(held)) {await cancelGrab();return true;}
-      const release=held;held=null;release.session.setFlight(release.token);
-      const operation=Promise.resolve().then(()=>original(event));releases.set(operation,release);
+      // DsN's document listener runs before our captured pointerup can submit its samples.
+      if(!event?.pdTrayRelease) return true;
+      const release=held;if(release.ending) return false;
+      release.ending=true;
+      release.direction??=selectThrowDirection([],performance.now());
+      const operation=Promise.resolve().then(async()=>{
+        await Promise.allSettled([...moves]);
+        if(!current(release)||held!==release) return false;
+        release.session.setThrowDirection(release.token,release.direction);
+        release.session.setFlight(release.token);held=null;nativeRelease=release;
+        try {
+          await setGrabCollision(release,true);
+          return await original(event);
+        } catch(error) {await cleanupConstraints(release);throw error;}
+        finally {nativeRelease=null;}
+      });releases.set(operation,release);
       try {return await operation;} finally {releases.delete(operation);}
     });
   }
@@ -213,6 +252,28 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       dice3d.persistent._persistentRoleContext(user,scopes)),_rawAppearances:raw,_rawRoleScopes:scopes,
       diceLibrary:dice3d.diceLibrary.constructor.getLibraryForUser(user)};
   }
+  function appearanceFingerprint({role,_rawAppearances,_rawRoleScopes}) {
+    return JSON.stringify({role,_rawAppearances,_rawRoleScopes});
+  }
+  function previewMaterialChoice(mesh,appearance) {
+    if(Array.isArray(mesh?.material)) return null;
+    const data=mesh?.material?.userData?.materialData;if(!data) return null;
+    if(Array.isArray(data.texture)) return null;
+    // A themed "none" texture asks DsN to choose from the theme again.
+    if(data.texture?.name==='none'&&appearance.colorset&&appearance.colorset!=='custom') return null;
+    const choice={};
+    for(const key of ['background','foreground','outline','edge','texture','material','font','fontScale']) {
+      if(Object.hasOwn(data,key)) choice[key]=data[key];
+    }
+    // DsN treats a truthy id as an already resolved texture; keep its image references.
+    if(choice.texture&&!choice.texture.id) choice.texture={...choice.texture,id:choice.texture.name||'pd-preview'};
+    return choice;
+  }
+  async function setGrabCollision(record,enabled) {
+    if(!enabled) record.collisionDisabled=true;
+    await record.box.physicsWorker.exec('setCollisionResponse',{ids:record.meshes.map(d=>d.id),enabled});
+    if(enabled) record.collisionDisabled=false;
+  }
   async function cleanupConstraints(record) {
     if(!record) return;
     const input=record.box.inputHandler,mouse=input.mouse,meshes=record.meshes;
@@ -228,7 +289,8 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       delete mesh.userData.pickupOffset;mesh.userData.preRollRates=null;
       mesh.userData.constrained=false;delete mesh.userData.localGrabTime;
     }
-    await record.box.physicsWorker.exec('removeConstraint',{ids:meshes.map(d=>d.id)});
+    try {await record.box.physicsWorker.exec('removeConstraint',{ids:meshes.map(d=>d.id)});}
+    finally {if(record.collisionDisabled) await setGrabCollision(record,true);}
     input.onPersistentEvent?.('release',{data:{persistentIds:meshes.map(d=>d.userData.persistentId)}});
     if(!mouse.heldPersistentDice.length) {
       interaction?.activate();
@@ -238,9 +300,12 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   }
   async function cancelGrab(token) {
     if(token&&(!held||held.token.sessionId!==token.sessionId||held.token.generation!==token.generation)) return;
-    const previous=held;held=null;++grabEpoch;
-    await grabPromise?.catch(()=>{});
-    await cleanupConstraints(previous);
+    const previous=held;held=null;++grabEpoch;++grabCleanup;
+    try {
+      await grabPromise?.catch(()=>{});
+      await Promise.allSettled([...moves]);
+      await cleanupConstraints(previous);
+    } finally {--grabCleanup;}
   }
   const api={
     get box(){return box;},get canvas(){return dice3d.canvas;},get boxGeneration(){return boxGeneration;},
@@ -266,9 +331,9 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       const i=next?.inputHandler,m=next?.persistentDiceManager,e=next?.throwEngine;
       if(!dice3d.persistent?.spawn||!dice3d.persistent?.remove||!dice3d.persistent?._emitPersistentEvent||!dice3d.pendingThrows?.claimThrow||
         !dice3d.pendingThrows?.shouldStampInteractive||!next.spawnPersistentDie||!next.removePersistentDie||
-        next.allowInteractivity===false||!i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||
-        !m?.onQueueThrow||!m?.matchSFX||!m?.throwPersistentDice||!e?.handlePersistentThrowCompletion||
-        !e?.createDiceMesh||!next?.renderScene||
+        next.allowInteractivity===false||!i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||!i?._computeThrowVelocity||
+        !m?.onQueueThrow||!m?.matchSFX||!m?.throwPersistentDice||!m?._getPersistentTextureCache||!e?.handlePersistentThrowCompletion||
+        !e?.createDiceMesh||!e?.getVectors||!next?.renderScene||
         !dice3d.exports?.Utils||!dice3d.DiceFactory?.getAppearanceForDice||!utils||!user) return false;
       if(box===next) {refreshTrayCanvas();return true;}
       const previous=box;
@@ -287,11 +352,43 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     },
     async createPreview(descriptor) {
       const owner=box,generation=boxGeneration;
-      const appearance=resolveAppearance(descriptor);
-      const cache={...owner.renderer.scopedTextureCache,type:'bridge-tray-preview'};
-      const created=await owner.throwEngine.createDiceMesh(`d${descriptor.faces}`,
-        appearance.appearance,appearance.diceLibrary,cache);
-      return !disposed&&generation===boxGeneration?created?.dicemesh??null:null;
+      const request={};previewRequests.set(descriptor,request);
+      const cache=owner.persistentDiceManager._getPersistentTextureCache();
+      const places=COMPOUND[descriptor.faces]??[[`d${descriptor.faces}`,1]];
+      const choices=new Map();
+      let preview=null;
+      for(let n=0;n<places.length;n++) {
+        if(disposed||generation!==boxGeneration) return null;
+        const type=places[n][0],appearance=resolveAppearance(descriptor,type);
+        const fingerprint=appearanceFingerprint(appearance);
+        const created=await owner.throwEngine.createDiceMesh(type,appearance.appearance,
+          appearance.diceLibrary,cache);
+        if(disposed||generation!==boxGeneration) return null;
+        const choice=previewMaterialChoice(created?.dicemesh,appearance.appearance);
+        if(choice) choices.set(type,{fingerprint,choice});
+        // Compile with the board's lights and render target; restore renderer state before waiting.
+        if(created?.dicemesh&&owner.renderer.compileAsync) {
+          const renderer=owner.renderer,target=owner.diceScene?.finalComposer?.readBuffer;
+          const previous=target&&renderer.getRenderTarget&&renderer.setRenderTarget?{
+            target:renderer.getRenderTarget(),face:renderer.getActiveCubeFace?.()??0,
+            mip:renderer.getActiveMipmapLevel?.()??0}:null;
+          let compilation;
+          try {
+            if(previous) renderer.setRenderTarget(target);
+            compilation=renderer.compileAsync(created.dicemesh,owner.camera,owner.scene);
+          } finally {
+            if(previous) renderer.setRenderTarget(previous.target,previous.face,previous.mip);
+          }
+          await compilation;
+        }
+        if(disposed||generation!==boxGeneration) return null;
+        if(n===0) preview=created?.dicemesh??null;
+        if(!preview) return null;
+      }
+      if(previewRequests.get(descriptor)===request) {
+        previewMaterials.set(descriptor,{boxGeneration:generation,choices});
+      }
+      return preview;
     },
     async spawn(session,descriptor,positionPct) {
       const record={session,token:{sessionId:session.id,generation:session.generation},
@@ -301,6 +398,10 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       const linkGroupId=places.length>1?`${session.id}:${session.generation}:${descriptor.key}`:null;
       for(let n=0;n<places.length;n++) {
         const type=places[n][0],appearance=resolveAppearance(descriptor,type);
+        const prepared=previewMaterials.get(descriptor),selected=prepared?.choices.get(type);
+        if(prepared?.boxGeneration===boxGeneration&&selected?.fingerprint===appearanceFingerprint(appearance)) {
+          Object.assign(appearance.appearance,selected.choice);
+        }
         const mesh=await dice3d.persistent.spawn(type,positionPct,{...appearance,
           remotePersistentId:`${taskDiePrefix}${globalThis.crypto.randomUUID()}`,
           guest:{pendingId:`${TASK_PREFIX}${session.id}`,reservedForUserId:session.userId},linkGroupId,
@@ -323,7 +424,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
     },
     async beginGrab(session,meshes,sample) {
       const input=box.inputHandler,mouse=input.mouse;
-      if(held||mouse.constraintDown||mouse.heldPersistentDice.length) return false;
+      if(held||grabCleanup||grabPromise||releases.size||mouse.constraintDown||mouse.heldPersistentDice.length) return false;
       const token={sessionId:session.id,generation:session.generation};
       const expanded=[...owned.values()].filter(r=>r.session.id===session.id&&current(r)).map(r=>r.mesh);
       if(!expanded.length||meshes.some(d=>!expanded.includes(d))) return false;
@@ -334,7 +435,14 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
         1-2*(sample.clientY-rect.top)/rect.height);
       mouse.pendingGrab=null;mouse.constraintDown=true;
       if(interaction?.object) interaction.object.interactive=false;
-      grabPromise=input._beginPersistentGrab(expanded,{x:0,y:.15,z:0});
+      // Native spawning gives bodies spin. Reset once; no per-frame worker traffic while held.
+      grabPromise=(async()=>{
+        await setGrabCollision(record,false);
+        await record.box.physicsWorker.exec('setBodyPositions',{updates:expanded.map(mesh=>({
+          id:mesh.id,position:{x:mesh.parent.position.x,y:mesh.parent.position.y,z:mesh.parent.position.z}}))});
+        if(epoch!==grabEpoch||!current(record)) return;
+        await input._beginPersistentGrab(expanded,{x:0,y:.15,z:0});
+      })();
       try {
         await grabPromise;
         if(epoch!==grabEpoch||!current(record)) {await cleanupConstraints(record);return false;}
@@ -348,9 +456,10 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       return box.onMouseMove(sample,{x:2*(sample.clientX-rect.left)/rect.width-1,
         y:1-2*(sample.clientY-rect.top)/rect.height});
     },
-    async releaseGrab() {
+    async releaseGrab(samples=[],now=performance.now()) {
       if(!held) return false;
-      return box.onMouseUp({type:'pointerup'});
+      held.direction=selectThrowDirection(samples,now);
+      return box.onMouseUp({type:'pointerup',pdTrayRelease:true});
     },cancelGrab,
     async removeSession(sessionId,token) {
       if(held?.session.id===sessionId) await cancelGrab(token);

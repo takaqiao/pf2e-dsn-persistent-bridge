@@ -2,7 +2,7 @@
   "id": "pf2e-dsn-persistent-bridge",
   "title": "Persistent Dice",
   "description": "An octagonal dice tray for native PF2e checks and damage.",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "compatibility": {
     "minimum": "14.361",
     "verified": "14.368"
@@ -64,7 +64,7 @@
         "type": "module",
         "reason": "Provides dice rendering and local tray physics; without it this module silently disables itself.",
         "compatibility": {
-          "verified": "6.4.1",
+          "verified": "6.4.2",
           "minimum": "6.4.1"
         }
       }
@@ -73,7 +73,7 @@
   "socket": false,
   "url": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge",
   "manifest": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest/download/module.json",
-  "download": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/download/v0.5.2/module.zip",
+  "download": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/download/v0.5.3/module.zip",
   "bugs": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/issues",
   "readme": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge#readme",
   "changelog": "https://github.com/takaqiao/pf2e-dsn-persistent-bridge/blob/main/CHANGELOG.md"

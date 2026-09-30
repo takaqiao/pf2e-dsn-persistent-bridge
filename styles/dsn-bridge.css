@@ -7,6 +7,6 @@
 .pd-tray-hit:focus-visible { outline:2px solid var(--color-border-highlight); outline-offset:-3px; }
 .pd-tray-hit[data-state="armed"],.pd-tray-hit[data-state="grabbing"] { cursor:grabbing; }
 .pd-tray-hit[data-state="armed"] { box-shadow:inset 0 0 0 3px var(--color-border-highlight); }
-.pd-tray-hit[data-state="empty"],.pd-tray-hit[data-state="private"],.pd-tray-hit[data-state="unsupported"] { cursor:default; }
+.pd-tray-hit[data-state="empty"],.pd-tray-hit[data-state="private"],.pd-tray-hit[data-state="unsupported"],.pd-tray-hit[data-state="loading"] { cursor:default; }
 .pd-tray-status { display:none; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); opacity:.65; }
 .pd-tray-hit[data-state="private"] .pd-tray-status,.pd-tray-hit[data-state="unsupported"] .pd-tray-status { display:block; }

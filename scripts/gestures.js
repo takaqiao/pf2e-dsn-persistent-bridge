@@ -13,6 +13,18 @@ export function createGestureController({element,adapter,getSession,
     adapter.boxGeneration===r.boxGeneration&&r.session.mode==='public'&&
     (r.token?r.session.isCurrent(r.token):r.session.generation===r.initialGeneration)&&
     !['submitted','cancelled'].includes(r.session.status);
+  function trimSamples(r,time) {
+    while(r.samples.length>1&&r.samples[1].time<=time-200) r.samples.shift();
+  }
+  function recordSample(r,sample,time) {
+    const validPoint=Number.isFinite(sample.clientX)&&Number.isFinite(sample.clientY);
+    if(validPoint) {
+      r.sample={clientX:sample.clientX,clientY:sample.clientY};
+      const last=r.samples.at(-1);
+      if(last.clientX!==sample.clientX||last.clientY!==sample.clientY) r.samples.push({...r.sample,time});
+    }
+    trimSamples(r,time);return validPoint;
+  }
   function releaseCapture(r) {
     if(r?.pointerId!==null) try {element.releasePointerCapture(r.pointerId);} catch {}
   }
@@ -50,24 +62,27 @@ export function createGestureController({element,adapter,getSession,
     } catch(error) {console.warn('Persistent Dice: grab failed',error);if(active===r) await cancel();else await clean(r,false);}
   }
   function start(event,keyboard=false) {
-    if(disposed||active||(!keyboard&&(event.button!==0||!event.isPrimary))) return;
+    if(disposed||active||element.dataset?.state==='loading'||(!keyboard&&(event.button!==0||!event.isPrimary))) return;
     const session=getSession();if(!session||session.mode!=='public'||!session.descriptors.length||
       !['open','settled'].includes(session.status)) return;
     const rect=element.getBoundingClientRect();
     const sample=keyboard?{clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2}:event;
+    if(!Number.isFinite(sample.clientX)||!Number.isFinite(sample.clientY)) return;
     if(sample.clientX<rect.left||sample.clientX>rect.left+rect.width||
       sample.clientY<rect.top||sample.clientY>rect.top+rect.height) return;
     event.preventDefault();event.stopPropagation();
     const r={session,epoch:++epoch,initialGeneration:session.generation,boxGeneration:adapter.boxGeneration,
       token:null,pointerId:keyboard?null:event.pointerId,sample:{clientX:sample.clientX,clientY:sample.clientY},
-      origin:{clientX:sample.clientX,clientY:sample.clientY},keyboard,state:'pressing'};
+      origin:{clientX:sample.clientX,clientY:sample.clientY},
+      samples:[{clientX:sample.clientX,clientY:sample.clientY,time:now()}],keyboard,state:'pressing'};
     active=r;if(!keyboard) element.setPointerCapture(event.pointerId);announce('pressing',r);
     later(()=>{if(!valid(r)) {void cancel();return;}announce('armed',r);if(keyboard) void lift(r);},300);
   }
   function move(event) {
     const r=active;if(!r||r.keyboard||event.pointerId!==r.pointerId) return;
-    event.preventDefault();event.stopPropagation();r.sample={clientX:event.clientX,clientY:event.clientY};
+    event.preventDefault();event.stopPropagation();
     if(!valid(r)) {void cancel();return;}
+    if(!recordSample(r,event,now())) return;
     if(r.state==='armed'&&Math.hypot(event.clientX-r.origin.clientX,event.clientY-r.origin.clientY)>=12) void lift(r);
     else if(r.state==='held') void adapter.moveGrab(r.sample);
   }
@@ -75,8 +90,10 @@ export function createGestureController({element,adapter,getSession,
     const r=active;if(!r||(!r.keyboard&&event.pointerId!==r.pointerId)) return;
     event.preventDefault();event.stopPropagation();
     if(r.state!=='held'||!valid(r)) {await cancel();return;}
+    const releasedAt=now();
+    if(r.keyboard) trimSamples(r,releasedAt);else recordSample(r,event,releasedAt);
     active=null;++epoch;stopTimers();releaseCapture(r);adapter.setGrabScale?.(1);announce('releasing',r);
-    try {await adapter.releaseGrab();announce('idle',r);}
+    try {await adapter.releaseGrab(r.samples,releasedAt);announce('idle',r);}
     catch(error) {await clean(r);announce('idle',r);console.warn('Persistent Dice: release failed',error);}
   }
   const listen=(target,type,fn)=>{target.addEventListener(type,fn);listeners.push(()=>target.removeEventListener(type,fn));};

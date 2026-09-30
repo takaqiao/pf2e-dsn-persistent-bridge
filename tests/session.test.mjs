@@ -104,3 +104,52 @@ test('d100 accepts 100 but not 0 and snapshots cannot mutate slots', () => {
   assert.equal(snapshot.descriptors[0].faces,100);
   assert.throws(()=>{snapshot.values[0].value=1;},TypeError);
 });
+
+test('a current grab freezes direction into its confirmed submission',()=>{
+  const s=make(),token=s.startBatch(),direction={x:3,y:4};
+  assert.equal(typeof s.setThrowDirection,'function');
+  assert.equal(s.setThrowDirection(token,direction),true);direction.x=8;
+  s.attachDie(token,'a','die-a');s.setFlight(token);s.settle(token,[{persistentId:'die-a',value:7}]);
+  const snapshot=s.prepareSubmit();
+  assert.deepEqual(snapshot.throwDirection,{x:.6,y:.8});
+  assert.equal(Object.isFrozen(snapshot.throwDirection),true);
+});
+
+test('direction rejects other tokens, invalid axes and changes after release',()=>{
+  const s=make(),token=s.startBatch();
+  assert.equal(typeof s.setThrowDirection,'function');
+  assert.equal(s.setThrowDirection({...token,sessionId:'other'},{x:1,y:0}),false);
+  assert.equal(s.setThrowDirection(token,{x:NaN,y:0}),false);
+  assert.equal(s.setThrowDirection(token,{x:0,y:0}),false);
+  s.setFlight(token);
+  assert.equal(s.setThrowDirection(token,{x:1,y:0}),false);
+  assert.equal(s.prepareSubmit().throwDirection,undefined);
+});
+
+test('an unlanded grab cannot submit its direction',()=>{
+  const s=make(),token=s.startBatch();
+  assert.equal(typeof s.setThrowDirection,'function');
+  s.setThrowDirection(token,{x:1,y:0});s.attachDie(token,'a','die-a');s.setFlight(token);
+  assert.equal(Object.hasOwn(s.prepareSubmit(),'throwDirection'),false);
+});
+
+test('replacement, new batches and private mode discard the previous direction',()=>{
+  for(const change of ['replace','batch','private']) {
+    const s=make(),token=s.startBatch();
+    assert.equal(typeof s.setThrowDirection,'function');
+    s.setThrowDirection(token,{x:1,y:0});s.attachDie(token,'a','old');
+    s.settle(token,[{persistentId:'old',value:7}]);
+    if(change==='batch') {
+      const next=s.startBatch();s.attachDie(next,'a','new');s.settle(next,[{persistentId:'new',value:8}]);
+    } else s.replace({mode:change==='private'?'blind':'public',descriptors:[d20]});
+    assert.equal(s.setThrowDirection(token,{x:0,y:1}),false);
+    assert.equal(s.prepareSubmit().throwDirection,undefined);
+  }
+});
+
+test('cancelled sessions reject direction and cannot submit it',()=>{
+  const s=make(),token=s.startBatch();
+  assert.equal(typeof s.setThrowDirection,'function');
+  s.setThrowDirection(token,{x:1,y:0});s.cancel();
+  assert.equal(s.setThrowDirection(token,{x:0,y:1}),false);assert.equal(s.prepareSubmit(),null);
+});

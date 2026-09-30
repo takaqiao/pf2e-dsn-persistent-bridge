@@ -21,10 +21,35 @@ test('one hundred previews fit inside the octagonal padded floor',()=>{
 test('a single preview stays miniature instead of filling the tray',()=>{
   assert.ok(previewPositions(1)[0].size<=.16);
 });
+test('preview placement varies between checks but stays stable within one generation',()=>{
+  const a=previewPositions(12,'check-a:0');
+  assert.deepEqual(a,previewPositions(12,'check-a:0'));
+  assert.notDeepEqual(a,previewPositions(12,'check-b:0'));
+  assert.notDeepEqual(a,previewPositions(12,'check-a:1'));
+  for(const p of a) assert.ok(p.yaw>=0&&p.yaw<Math.PI*2);
+});
+test('jittered preview bounds stay inside the liner without overlapping',()=>{
+  for(const count of [1,2,4,20,100]) for(const seed of ['a','b','c']) {
+    const positions=previewPositions(count,seed);
+    for(const p of positions) assert.ok(Math.hypot(p.x,p.z)+Math.SQRT2*p.size<.81);
+    for(let i=0;i<count;i++) for(let j=i+1;j<count;j++) {
+      const a=positions[i],b=positions[j];
+      assert.ok(Math.hypot(a.x-b.x,a.z-b.z)>Math.SQRT2*(a.size+b.size));
+    }
+  }
+});
 test('preview cleanup never disposes borrowed geometry or materials',()=>{
   let disposed=0;const mesh={geometry:{dispose:()=>disposed++},material:{dispose:()=>disposed++}};
   const children=[mesh],parent={remove(item){children.splice(children.indexOf(item),1);}};
   releasePreview(parent,mesh);assert.deepEqual(children,[]);assert.equal(disposed,0);
+});
+
+test('the tray stays loading until its preview materials are prepared',async()=>{
+  const wait=deferred(),h=viewHarness(()=>wait.promise);h.view.mount();
+  const showing=h.view.show({id:'loading',generation:0,mode:'public',descriptors:[{key:'a'}]});
+  assert.equal(h.view.element.dataset.state,'loading');
+  wait.resolve(new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial()));
+  await showing;assert.equal(h.view.element.dataset.state,'ready');h.view.dispose();
 });
 function viewHarness(createPreview=async()=>new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial()),ResizeObserver) {
   const camera=new THREE.PerspectiveCamera(20,1.25,.001,10);
@@ -74,6 +99,19 @@ test('tray and dice share the desktop camera without changing the native project
   assert.deepEqual(native.projectionMatrix.toArray(),before.projection);
   assert.deepEqual(native.matrixWorld.toArray(),before.world);
   h.view.dispose();assert.equal(h.scene.children.length,0);
+});
+test('preview yaw is applied before sizing and the miniature stays on the liner',async()=>{
+  const h=viewHarness(async()=>new THREE.Mesh(new THREE.BoxGeometry(1,.5,2),new THREE.MeshStandardMaterial()));
+  h.view.mount();const session={id:'pose-check',generation:0,mode:'public',descriptors:[{key:'a'}]};
+  await h.view.show(session);
+  const parent=h.tray.getObjectByName('previews'),wrapper=parent.children[0],mesh=wrapper.children[0];
+  assert.notEqual(mesh.rotation.y,0);h.tray.updateMatrixWorld(true);
+  const box=new THREE.Box3().setFromObject(wrapper),size=box.getSize(new THREE.Vector3());
+  assert.ok(Math.abs(box.min.y-.028)<1e-7);assert.ok(Math.max(size.x,size.y,size.z)<=.28+1e-7);
+  const position=wrapper.position.toArray(),yaw=mesh.rotation.y;
+  await h.view.show(session);
+  assert.deepEqual(parent.children[0].position.toArray(),position);
+  assert.equal(parent.children[0].children[0].rotation.y,yaw);h.view.dispose();
 });
 test('220 pixel dock follows the projected shallow outline instead of a square hit area',()=>{
   const h=viewHarness();h.view.mount();

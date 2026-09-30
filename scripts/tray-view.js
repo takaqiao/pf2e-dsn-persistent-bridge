@@ -19,15 +19,22 @@ export function dockRect(viewport,width,reservedRects=[],height=width) {
   }
   return result;
 }
-export function previewPositions(count) {
+export function previewPositions(count,seed=0) {
   if(!count) return [];
+  let state=2166136261;
+  for(const char of String(seed)) state=Math.imul(state^char.charCodeAt(0),16777619)>>>0;
+  const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
   for(let grid=Math.ceil(Math.sqrt(count));;grid++) {
     const spacing=1.3/grid,positions=[];
     for(let row=0;row<grid;row++) for(let col=0;col<grid;col++) {
-      const x=(col-(grid-1)/2)*spacing,z=(row-(grid-1)/2)*spacing,size=Math.min(.14,spacing*.32);
-      if(Math.hypot(x,z)+size<.81) positions.push({x,z,size});
+      const x=(col-(grid-1)/2)*spacing+(random()-.5)*spacing*.08,
+        z=(row-(grid-1)/2)*spacing+(random()-.5)*spacing*.08,size=Math.min(.14,spacing*.32);
+      if(Math.hypot(x,z)+Math.SQRT2*size<.81) positions.push({x,z,size,yaw:random()*Math.PI*2});
     }
-    if(positions.length>=count) return positions.slice(0,count);
+    if(positions.length>=count) {
+      for(let i=positions.length-1;i>0;i--) {const j=Math.floor(random()*(i+1));[positions[i],positions[j]]=[positions[j],positions[i]];}
+      return positions.slice(0,count);
+    }
   }
 }
 export function releasePreview(parent,preview) {parent?.remove(preview);}
@@ -101,7 +108,8 @@ export function createTrayView({adapter,THREE,woodTexture=null,document=globalTh
     previews.position.y=state==='armed'?.04:0;
     element.dataset.state=state;const key=state==='private'?'PD.Private':state==='unsupported'?'PD.NativeOnly':'PD.Tray';
     element.title=label(key);element.setAttribute('aria-label',label(key));
-    element.setAttribute('aria-disabled',String(['private','unsupported','empty'].includes(state)));
+    element.setAttribute('aria-disabled',String(['private','unsupported','empty','loading'].includes(state)));
+    element.setAttribute('aria-busy',String(state==='loading'));
     icon.className=`fa-solid ${state==='unsupported'?'fa-dice':'fa-eye-slash'} pd-tray-status`;
     draw();
   }
@@ -169,11 +177,11 @@ export function createTrayView({adapter,THREE,woodTexture=null,document=globalTh
       const ticket=epoch,generation=adapter.boxGeneration;
       if(session.mode!=='public') {setState('private');return;}
       if(!session.descriptors.length) return;
-      setState('ready');const positions=previewPositions(session.descriptors.length);
+      setState('loading');const positions=previewPositions(session.descriptors.length,`${session.id}:${session.generation}`);
       const results=await Promise.allSettled(session.descriptors.map(async(d,i)=>{
         const mesh=await adapter.createPreview(d);if(!mesh) return;
         if(disposed||ticket!==epoch||generation!==adapter.boxGeneration) {releasePreview(mesh.parent,mesh);return;}
-        const wrapper=new Group(),p=positions[i];wrapper.add(mesh);
+        const wrapper=new Group(),p=positions[i];wrapper.add(mesh);mesh.rotation.y+=p.yaw;
         if(mesh.userData.modelScale) mesh.scale.multiplyScalar(mesh.userData.modelScale);
         mesh.updateMatrixWorld(true);const bounds=new Box3().setFromObject(mesh),ext=bounds.getSize(new Vector3());
         const max=Math.max(ext.x,ext.y,ext.z);if(max>0) mesh.scale.multiplyScalar(p.size*2/max);
@@ -182,7 +190,7 @@ export function createTrayView({adapter,THREE,woodTexture=null,document=globalTh
         mesh.castShadow=true;mesh.receiveShadow=true;
         wrapper.position.set(p.x,floorHeight+.003,p.z);previews.add(wrapper);
       }));
-      if(!disposed&&ticket===epoch&&generation===adapter.boxGeneration) draw();
+      if(!disposed&&ticket===epoch&&generation===adapter.boxGeneration) setState('ready');
       const failed=results.find(result=>result.status==='rejected');if(failed) throw failed.reason;
     },
     setSize(px){size=Math.max(160,Math.min(320,px));layout();},

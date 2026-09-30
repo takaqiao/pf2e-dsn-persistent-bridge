@@ -1,11 +1,13 @@
+import {normalizeThrowDirection} from './throw-direction.js';
+
 /** A dialog owns its dice, generation and one immutable submission. */
 export function createSession({id,appId,userId,kind,mode,descriptors}) {
-  let generation=0, status='open', items=copyDescriptors(descriptors);
+  let generation=0, status='open', items=copyDescriptors(descriptors),throwDirection=null;
   const attached=new Map(), values=new Map();
   const terminal=()=>status==='cancelled'||status==='submitted';
   const isCurrent=token=>Boolean(token && token.sessionId===id &&
     token.generation===generation && !terminal());
-  const reset=()=>{generation++;attached.clear();values.clear();};
+  const reset=()=>{generation++;attached.clear();values.clear();throwDirection=null;};
 
   return Object.freeze({
     id,appId,userId,kind,
@@ -26,6 +28,11 @@ export function createSession({id,appId,userId,kind,mode,descriptors}) {
         attached.has(persistentId) || [...attached.values()].includes(key) ||
         !items.some(d=>d.key===key)) return false;
       attached.set(persistentId,key); return true;
+    },
+    setThrowDirection(token,direction) {
+      if(!isCurrent(token)||status!=='grabbing'||mode!=='public') return false;
+      const normalized=normalizeThrowDirection(direction);if(!normalized) return false;
+      throwDirection=normalized;return true;
     },
     setFlight(token) {
       if(!isCurrent(token) || status!=='grabbing') return false;
@@ -48,8 +55,9 @@ export function createSession({id,appId,userId,kind,mode,descriptors}) {
       if(terminal()) return null;
       const snapshot=Object.freeze({id,kind,mode,
         descriptors:copyDescriptors(items),
-        values:Object.freeze([...values].map(([key,value])=>Object.freeze({key,value})))});
-      generation++; attached.clear(); status='submitted';
+        values:Object.freeze([...values].map(([key,value])=>Object.freeze({key,value}))),
+        ...(values.size&&throwDirection?{throwDirection}:{})});
+      generation++; attached.clear(); throwDirection=null;status='submitted';
       return snapshot;
     },
     replace(next) {

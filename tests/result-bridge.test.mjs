@@ -95,3 +95,66 @@ for(const value of [1,10,100]) test(`d100 physical value ${value} is preserved`,
     values:[{key:descriptors[0].key,value}]},async()=>{die.roll();return roll;},[]);
   assert.equal(die.results[0].result,value);
 });
+
+test('confirmed physical terms carry direction while untouched terms keep native motion',async()=>{
+  const a=makeDie(6),b=makeDie(8),roll={dice:[a,b],options:{}},descriptors=describeDice(roll);
+  await evaluateWithSnapshot(roll,{id:'s',mode:'public',descriptors,throwDirection:{x:3,y:4},
+    values:[{key:descriptors[0].key,value:6}]},async()=>{a.roll();b.roll();return roll;},[]);
+  assert.deepEqual(roll.options.pdPhysicalDirection,{x:.6,y:.8});
+  assert.deepEqual(a.options.pdPhysicalDirection,{x:.6,y:.8});
+  assert.equal(b.options.pdPhysicalDirection,undefined);
+  assert.deepEqual([a.results[0].result,b.results[0].result],[6,4]);
+});
+
+test('a partially supplied term shares direction with its native supplemental dice',async()=>{
+  const term=makeDie(6,4,2),roll={dice:[term],options:{}},descriptors=describeDice(roll);
+  await evaluateWithSnapshot(roll,{id:'s',mode:'public',descriptors,throwDirection:{x:0,y:1},
+    values:[{key:descriptors[1].key,value:6}]},async()=>{term.roll();term.roll();return roll;},[]);
+  assert.deepEqual(term.results.map(r=>r.result),[4,6]);
+  assert.deepEqual(term.options.pdPhysicalDirection,{x:0,y:1});
+  assert.equal(roll.options.pdPhysicalComplete,false);
+});
+
+test('private, unbound and repeated native evaluations clear copied term directions',async()=>{
+  for(const snapshot of [null,{mode:'blind',values:[{key:'old',value:20}]},{mode:'public',values:[]}]) {
+    const roll=makeCheckRoll({pdPhysicalDirection:{x:1,y:0}}),term=roll.dice[0];
+    term.options.pdPhysicalDirection={x:1,y:0};
+    await evaluateWithSnapshot(roll,snapshot,roll.evaluate.bind(roll),[]);
+    assert.equal(roll.options.pdPhysicalDirection,undefined);
+    assert.equal(term.options.pdPhysicalDirection,undefined);
+  }
+  const roll=makeCheckRoll(),descriptors=describeDice(roll);
+  await evaluateWithSnapshot(roll,{id:'s',mode:'public',descriptors,throwDirection:{x:1,y:0},
+    values:[{key:descriptors[0].key,value:20}]},roll.evaluate.bind(roll),[]);
+  await evaluateWithSnapshot(roll,null,roll.evaluate.bind(roll),[]);
+  assert.equal(roll.options.pdPhysicalDirection,undefined);
+  assert.equal(roll.dice[0].options.pdPhysicalDirection,undefined);
+});
+
+test('private evaluation clears direction even from skipped persistent terms',async()=>{
+  const term=makeDie(6,4,1,{pdPhysicalDirection:{x:1,y:0}}),
+    roll={options:{pdPhysicalDirection:{x:1,y:0}},instances:[{type:'bleed',persistent:true,dice:[term]}]};
+  await evaluateWithSnapshot(roll,null,async()=>{term.roll();return roll;},[]);
+  assert.equal(term.options.pdPhysicalDirection,undefined);
+});
+
+test('failure and unused physical handoffs leave no direction marker',async()=>{
+  const roll=makeCheckRoll({pdPhysicalDirection:{x:1,y:0}}),term=roll.dice[0],descriptors=describeDice(roll);
+  term.options.pdPhysicalDirection={x:1,y:0};
+  const snapshot={id:'s',mode:'public',descriptors,throwDirection:{x:0,y:1},
+    values:[{key:descriptors[0].key,value:20}]};
+  await assert.rejects(evaluateWithSnapshot(roll,snapshot,async()=>{term.roll();throw Error('native failure');},[]),/native failure/);
+  assert.equal(roll.options.pdPhysicalDirection,undefined);assert.equal(term.options.pdPhysicalDirection,undefined);
+  const unused=makeCheckRoll();
+  await evaluateWithSnapshot(unused,snapshot,async()=>unused,[]);
+  assert.equal(unused.options.pdPhysicalDirection,undefined);
+  assert.equal(unused.dice[0].options.pdPhysicalDirection,undefined);
+});
+
+test('invalid snapshot direction does not enter evaluated Roll options',async()=>{
+  const roll=makeCheckRoll(),descriptors=describeDice(roll);
+  await evaluateWithSnapshot(roll,{id:'s',mode:'public',descriptors,throwDirection:{x:Infinity,y:0},
+    values:[{key:descriptors[0].key,value:20}]},roll.evaluate.bind(roll),[]);
+  assert.equal(roll.options.pdPhysicalDirection,undefined);
+  assert.equal(roll.dice[0].options.pdPhysicalDirection,undefined);
+});

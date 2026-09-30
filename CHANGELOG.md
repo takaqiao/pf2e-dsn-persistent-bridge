@@ -1,31 +1,14 @@
 # Changelog
 
-A short, plain-language summary of what changed in each release. For full
-technical detail (race conditions, code references, internal reasoning),
-see [`CHANGELOG-DEV.md`](./CHANGELOG-DEV.md).
+## 0.5.3 — 2026-10-01
 
-## 0.5.2 — Local candidate, unreleased
-
-- Added the approved desktop view: 55° from overhead, 35° FOV, no orbit or screen rotation. Tray geometry remains horizontal; tray dice share its perspective, while native throws keep the DsN camera.
-- Rebuilt the shallow rim with equal-height sides, small bevels and sloping inner walls. Added walnut grain along each rim segment, a dark wine liner and a narrow aged-brass inlay.
-- Tray updates reuse the DsN renderer and cache one local texture. No separate rendering loop or WebGL context is added.
-
-## 0.5.1 — Local candidate, unreleased
-
-This candidate follows the user's approved revision to the octagonal tray.
-
-- Preparing, grabbing, growing, spinning and throwing tray dice happen locally. Other players receive the native DsN animation when the public PF2e chat result is created; the roller avoids a duplicate animation.
-- Retired remote persistent-dice compatibility and ordinary fixed-dice controls. The GM's one-time migration disables DsN's world-level fixed-dice setting while retaining saved flags.
-- Aligned the tray floor with the canvas and kept the native camera perspective.
-- Growth uses real elapsed time over about 150ms. The held state is announced once, and the existing native ticker renders size changes without extra redraws per growth step.
-
-The 0.5.0 QA record remains historical evidence. These changes require fresh verification; this entry does not report a published release or completed 0.5.1 browser QA.
-
-## 0.5.0 — Octagonal tray, local candidate
-
-- Replaced the dialog's slot panel with a 3D octagonal tray and whole-hand grab gesture, while retaining native PF2e check and damage dialogs.
-- Updated the compatibility target to Foundry 14.368, PF2e 8.5.1 and DsN 6.4.1. Removed legacy panels, tutorial messages, mirror queues and periodic dice scans.
-- Recorded bounded browser and unit-test evidence in [the 0.5.0 QA record](docs/qa-20260930.md). Its remote persistent-dice behavior is superseded by the 0.5.1 revision above.
+- Replaced the dialog panel and fixed-dice controls with a right-bottom octagonal tray. Native PF2e check, weapon and spell damage dialogs retain their Roll buttons.
+- Added a shallow walnut frame, wine liner, small bevels and sloping inner walls. The horizontal tray and miniatures share a 55° desktop view and 35° FOV; native throws keep the DsN camera.
+- Previews warm the native texture and shader cache before grabbing becomes available. Physical dice reuse the preview's selected palette. Miniatures have seeded positions and yaw, with no idle physics or added rendering loop.
+- Held dice no longer rotate automatically. Releasing always throws; at least 3px of movement in the last 200ms supplies the direction, while a stationary or paused release selects one random direction.
+- Preparation and grabbing stay local. Public chat results carry the direction into other players' native DsN animation. Native spread, cameras and player settings still apply; private rolls keep their native flow.
+- Retired remote persistent-dice compatibility, old panels, tutorial messages, mirror queues and periodic scans. The GM migration disables DsN's world-level fixed-dice setting while retaining saved data for rollback.
+- Verified the native integration with Foundry 14.368, PF2e 8.5.1 and DsN 6.4.1 / 6.4.2. See [performance QA](docs/qa-performance-20261001.md) for the measurements and limits.
 
 ## 0.4.10 — Deep audit: result-corruption fix + visibility patch repair
 

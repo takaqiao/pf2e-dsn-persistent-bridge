@@ -1,4 +1,5 @@
 import {diceEntries} from './descriptors.js';
+import {normalizeThrowDirection} from './throw-direction.js';
 
 /** Reference carriers keep identical concurrent native rolls independent. */
 export function createRollBindings() {
@@ -70,6 +71,9 @@ export function createRollBindings() {
 let revision=0;
 export async function evaluateWithSnapshot(roll,snapshot,wrapped,args) {
   roll.options??={};delete roll.options.pdPhysicalRevision;delete roll.options.pdPhysicalComplete;
+  delete roll.options.pdPhysicalDirection;
+  const allTerms=new Set([...(roll.dice??[]),...(roll.instances??[]).flatMap(instance=>instance.dice??[])]);
+  for(const term of allTerms) delete term.options?.pdPhysicalDirection;
   if(snapshot?.mode!=='public'||!snapshot.values?.length) return wrapped(...args);
   const entries=diceEntries(roll),byPath=new Map(entries.map(e=>[e.termPath,e]));
   const saved=[],queues=new Map(),physicalResults=new Set();
@@ -94,10 +98,22 @@ export async function evaluateWithSnapshot(roll,snapshot,wrapped,args) {
       };
     }
     const result=await wrapped(...args);
+    const direction=normalizeThrowDirection(snapshot.throwDirection);
+    const physicalTerms=diceEntries(roll).map(({term})=>term).filter(term=>
+      term.results.some(value=>physicalResults.has(value)));
+    if(direction&&physicalTerms.length) {
+      roll.options.pdPhysicalDirection=direction;
+      // DsN carries term options; native supplemental dice in the same term share its direction.
+      for(const term of physicalTerms) {term.options??={};term.options.pdPhysicalDirection=direction;}
+    }
     roll.options.pdPhysicalRevision=`${snapshot.id}:${Date.now()}:${++revision}`;
     const results=diceEntries(roll).flatMap(({term})=>term.results);
     roll.options.pdPhysicalComplete=results.length>0&&results.every(result=>physicalResults.has(result));
     return result;
+  } catch(error) {
+    delete roll.options.pdPhysicalRevision;delete roll.options.pdPhysicalComplete;delete roll.options.pdPhysicalDirection;
+    for(const term of new Set([...allTerms,...diceEntries(roll).map(({term})=>term)])) delete term.options?.pdPhysicalDirection;
+    throw error;
   } finally {
     for(const {term,original,hadOwn} of saved) {
       if(hadOwn) term.roll=original;else delete term.roll;
