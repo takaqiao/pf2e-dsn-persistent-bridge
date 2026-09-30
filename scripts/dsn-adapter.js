@@ -187,7 +187,8 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
         interaction.object.interactive=record.interactiveBefore;
     }
   }
-  async function cancelGrab() {
+  async function cancelGrab(token) {
+    if(token&&(!held||held.token.sessionId!==token.sessionId||held.token.generation!==token.generation)) return;
     const previous=held;held=null;++grabEpoch;
     await grabPromise?.catch(()=>{});
     await cleanupConstraints(previous);
@@ -195,6 +196,22 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
   const api={
     get box(){return box;},get canvas(){return dice3d.canvas;},get boxGeneration(){return boxGeneration;},
     get ownedCount(){return owned.size;},ownership:id=>owned.get(id)??null,
+    positionForSample(sample) {
+      const rect=dice3d.canvas.getBoundingClientRect(),raycaster=box.diceScene.raycaster;
+      raycaster.setFromCamera({x:2*(sample.clientX-rect.left)/rect.width-1,
+        y:1-2*(sample.clientY-rect.top)/rect.height},box.camera);
+      const ray=raycaster.ray,target=box.camera.position.clone();
+      ray.at(-ray.origin.y/ray.direction.y,target);
+      return box.toPositionPct(target.x,target.z);
+    },
+    setGrabScale(progress) {
+      if(!held) return;
+      for(const mesh of held.meshes) {
+        const record=lookup(mesh);record.normalScale??=mesh.scale.clone();
+        mesh.scale.copy(record.normalScale).multiplyScalar(.3+.7*progress);
+      }
+      box.renderScene();
+    },
     async ready() {
       if(disposed) return false;
       const next=dice3d.box;await next?.ready;
@@ -282,9 +299,10 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       if(!held) return false;
       return box.onMouseUp({type:'pointerup'});
     },cancelGrab,
-    async removeSession(sessionId) {
-      if(held?.session.id===sessionId) await cancelGrab();
-      const records=[...owned.entries()].filter(([,r])=>r.session.id===sessionId);
+    async removeSession(sessionId,token) {
+      if(held?.session.id===sessionId) await cancelGrab(token);
+      const records=[...owned.entries()].filter(([,r])=>r.session.id===sessionId&&
+        (!token||r.token.generation===token.generation));
       for(const [id] of records) owned.delete(id);
       for(const [id] of records) await dice3d.persistent.remove(id,true);
     },

@@ -57,10 +57,12 @@ export function createTrayView({adapter,THREE,document=globalThis.document,
   icon.className='fa-solid fa-eye-slash pd-tray-status';icon.setAttribute('aria-hidden','true');
   const label=key=>globalThis.game?.i18n?.localize(key)??key;
   function setState(state) {
+    previews.position.y=state==='armed'?.04:0;
     element.dataset.state=state;const key=state==='private'?'PD.Private':state==='unsupported'?'PD.NativeOnly':'PD.Tray';
     element.title=label(key);element.setAttribute('aria-label',label(key));
     element.setAttribute('aria-disabled',String(['private','unsupported','empty'].includes(state)));
     icon.className=`fa-solid ${state==='unsupported'?'fa-dice':'fa-eye-slash'} pd-tray-status`;
+    if(unmount) adapter.renderTray();
   }
   const ray=new Raycaster(),plane=new Plane(new Vector3(0,1,0),0);
   function worldAt(x,y,height=0) {

@@ -124,3 +124,10 @@ test('an empty mounted tray never starts physics or invokes native canvas hiding
   assert.equal(hides,0);assert.equal(fades,1);assert.deepEqual(runtime.physics,[]);
   await adapter.dispose();runtime._fadeOutCanvas(1000);assert.equal(hides,1);
 });
+test('cleanup of an old generation leaves a newer batch in the same dialog intact',async()=>{
+  const h=await harness();h.s.replace({mode:'public',descriptors:h.s.descriptors});h.s.startBatch();
+  const next=await h.adapter.spawn(h.s,h.s.descriptors[0],{x:.5,y:.5});
+  await h.adapter.removeSession(h.s.id,h.token);
+  assert.equal(h.adapter.ownership(next.userData.persistentId)?.mesh,next);
+  assert.equal(h.adapter.ownership(h.primary.userData.persistentId),null);
+});
