@@ -24,6 +24,25 @@ test('local task dice work with native decoration disabled and legacy restoratio
   await h.adapter.dispose();assert.equal(h.runtime.box.persistentDiceEnabled,false);
 });
 
+test('task dice can be grabbed and settled with native interactivity disabled',async()=>{
+  const h=await harness({allowInteractivity:false,persistentEnabled:false});assert.ok(h.primary);
+  assert.equal(h.runtime.box.allowInteractivity,false);
+  assert.equal(await h.runtime.persistent.spawn('d6',{}, {ownerUserId:'u'},false),null);
+  assert.equal(h.runtime.pendingThrows.shouldStampInteractive({rolls:[{options:{}}]}),true);
+  assert.equal(await h.adapter.beginGrab(h.s,[h.primary],{clientX:500,clientY:400}),true);
+  await h.adapter.moveGrab({clientX:504,clientY:400});
+  await h.adapter.releaseGrab([{clientX:500,clientY:400,time:100},{clientX:504,clientY:400,time:110}],110);
+  assert.ok(h.runtime.releaseVelocity.x>0);
+  await h.runtime.triggerOwnedThrow([h.primary],[17]);
+  assert.deepEqual(h.landings,[[h.token,[{persistentId:h.primary.userData.persistentId,value:17}]]]);
+  assert.deepEqual(h.runtime.events,[]);
+  assert.equal(h.runtime.box.allowInteractivity,false);
+  await h.adapter.removeSession(h.s.id);await h.adapter.dispose();
+  assert.equal(h.runtime.box.persistentDiceEnabled,false);
+  assert.equal(h.runtime.box.allowInteractivity,false);
+  assert.equal(h.runtime.box.persistentDiceList.length,0);
+});
+
 test('already restored legacy bodies clear locally without changing saved flags or broadcasting',async()=>{
   const runtime=makeDsnRuntime(),old=await runtime.persistent.spawn('d6',{}, {ownerUserId:'u'},false);
   const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,onSettled(){}});

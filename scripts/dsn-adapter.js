@@ -331,7 +331,7 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       const i=next?.inputHandler,m=next?.persistentDiceManager,e=next?.throwEngine;
       if(!dice3d.persistent?.spawn||!dice3d.persistent?.remove||!dice3d.persistent?._emitPersistentEvent||!dice3d.pendingThrows?.claimThrow||
         !dice3d.pendingThrows?.shouldStampInteractive||!next.spawnPersistentDie||!next.removePersistentDie||
-        next.allowInteractivity===false||!i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||!i?._computeThrowVelocity||
+        !i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||!i?._computeThrowVelocity||
         !m?.onQueueThrow||!m?.matchSFX||!m?.throwPersistentDice||!m?._getPersistentTextureCache||!e?.handlePersistentThrowCompletion||
         !e?.createDiceMesh||!e?.getVectors||!next?.renderScene||
         !dice3d.exports?.Utils||!dice3d.DiceFactory?.getAppearanceForDice||!utils||!user) return false;

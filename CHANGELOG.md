@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4 — 2026-10-01
+
+- Fixed the tray failing to appear when DsN's native interactivity setting is disabled. The tray uses the available native physics interfaces without enabling global interaction or changing the world setting.
+
 ## 0.5.3 — 2026-10-01
 
 - Replaced the dialog panel and fixed-dice controls with a right-bottom octagonal tray. Native PF2e check, weapon and spell damage dialogs retain their Roll buttons.

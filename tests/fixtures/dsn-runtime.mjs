@@ -2,7 +2,7 @@ export function deferred() {
   let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
   return {promise,resolve,reject};
 }
-export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,spawnWait=null,remoteCreateWait=null,persistentEnabled=true,releaseWait=null}={}) {
+export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,spawnWait=null,remoteCreateWait=null,persistentEnabled=true,allowInteractivity=true,releaseWait=null}={}) {
   let id=0,variant=0;
   const flags={appearance:{global:{diceColor:'#123456'}},saved:{appearance:true}};
   const user={id:'u',color:'#abcdef',getFlag:(scope,key)=>flags[key]};
@@ -89,7 +89,7 @@ export function makeDsnRuntime({queueResult=true,simulate=true,mergeExtra=null,s
         delete d.persistentThrow;delete d.sim;
       }
     }};
-  runtime.box={ready:Promise.resolve(),scene,inputHandler:input,persistentDiceManager:manager,persistentDiceEnabled:persistentEnabled,
+  runtime.box={ready:Promise.resolve(),scene,inputHandler:input,persistentDiceManager:manager,persistentDiceEnabled:persistentEnabled,allowInteractivity,
     get persistentDiceList(){return manager.persistentDiceList;},
     async spawnPersistentDie(type,appearance,pct,library,opts){
       if(!this.persistentDiceEnabled) return null;
