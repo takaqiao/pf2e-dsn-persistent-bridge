@@ -155,7 +155,7 @@ if(globalThis.Hooks) {
       const v=versions();
       if(game.system.id!=='pf2e'||!game.modules.get('lib-wrapper')?.active||!game.modules.get('dice-so-nice')?.active||
         !game.dice3d?.box?.ready||
-        !minimum(v.foundry,'14.361')||!minimum(v.pf2e,'8.5.1')||!minimum(v.dsn,'6.4.1')) return;
+        !minimum(v.foundry,'14.361')||!minimum(v.dsn,'6.4.1')) return;
       await migrateSettings();
       await registerPf2eColorsets(game.dice3d);
       bridge=createBridge({versions:v,getSetting:readSetting,onPhysicalRoll:roll=>suppression?.remember(roll),pf2e:options=>installPf2eBridge(options),

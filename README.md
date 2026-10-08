@@ -24,6 +24,8 @@
 
 DsN 的「允许骰子交互」开关可以保持关闭；0.5.4 修复了该设置关闭时骰盘不出现的问题，沿用世界原有设置。
 
+**0.5.5** 移除 PF2e 的最低版本限制，继续检查 PF2e 系统身份及原生接口；Foundry 14.361+、Dice So Nice 6.4.1+ 和 libWrapper 的要求保留。清单 verified 仍为 PF2e 8.5.1，尚未完成 PF2e 8.6.0 的完整世界验收。
+
 **0.5.3** 已在 Foundry 14.368、PF2e 8.5.1、Dice So Nice 6.4.1 / 6.4.2、libWrapper 1.13.5.1 的隔离世界中验收。[性能 QA](docs/qa-performance-20261001.md) 记录抓取、方向、结果、资源和验证边界；[托盘 QA](docs/qa-tray-20261001.md) 记录视角、材质和220px实际尺寸。
 
 开发检查：`npm ci`、`npm test`、`npm run check`。模块 API 提供 `diagnose()` 和不改角色/世界设置的 `runChecks()`。

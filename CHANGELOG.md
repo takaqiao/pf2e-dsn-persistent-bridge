@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.5 — 2026-10-08
+
+- Removed the PF2e minimum-version gate from the manifest and startup checks. The bridge still requires PF2e and its native interfaces, Foundry 14.361+, Dice So Nice 6.4.1+ and libWrapper.
+- The verified PF2e version remains 8.5.1. Source review and isolated tests cover the version-gate change; a full PF2e 8.6.0 world session has not been verified.
+
 ## 0.5.4 — 2026-10-01
 
 - Fixed the tray failing to appear when DsN's native interactivity setting is disabled. The tray uses the available native physics interfaces without enabling global interaction or changing the world setting.
