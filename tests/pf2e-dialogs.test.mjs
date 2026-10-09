@@ -55,3 +55,35 @@ test('closing an unsubmitted dialog releases its identity carrier',()=>{
     return evalWrapper.call({options:{domains:check.context.domains}},async()=>{},[]);
   },{},check.context).finally(dispose);
 });
+
+test('startup requires the native PF2e roll and wrapper entry points',async()=>{
+ const {canInstallPf2eBridge}=await import('../scripts/pf2e-dialogs.js');
+ class CheckRoll{evaluate(){}}class DamageRoll{evaluate(){}}
+ const options={hooks:{on(){},off(){}},wrapper:{register(){},unregister(){}},game:{pf2e:{Check:{roll(){}}}},
+  config:{Dice:{rolls:[CheckRoll,DamageRoll]}},RollClass:class Roll{}};
+ assert.equal(canInstallPf2eBridge(options),true);
+ for(const [owner,key]of [[options.wrapper,'register'],[options.hooks,'off'],[options.game.pf2e.Check,'roll'],
+  [CheckRoll.prototype,'evaluate'],[DamageRoll.prototype,'evaluate'],[options,'RollClass']]){
+  const original=owner[key];owner[key]=true;
+  assert.equal(canInstallPf2eBridge(options),false);owner[key]=original;
+ }
+ options.config.Dice.rolls=[null,CheckRoll,DamageRoll];assert.equal(canInstallPf2eBridge(options),false);
+ options.config.Dice.rolls=[,CheckRoll,DamageRoll];assert.equal(canInstallPf2eBridge(options),false);
+ const ShadowCheck=class CheckRoll{};
+ options.config.Dice.rolls=[ShadowCheck,CheckRoll,DamageRoll];assert.equal(canInstallPf2eBridge(options),false);
+ options.config.Dice.rolls=[CheckRoll,ShadowCheck,DamageRoll];assert.equal(canInstallPf2eBridge(options),true);
+ options.config.Dice.rolls=[CheckRoll];assert.equal(canInstallPf2eBridge(options),false);
+});
+
+test('a non-callable optional spell method is not registered and cleanup owns every hook',()=>{
+ const callbacks=new Map(),registered=new Map();
+ const hooks={on(name,fn){callbacks.set(name,fn);return name;},off(name){callbacks.delete(name);}};
+ const wrapper={register(id,path,fn){registered.set(path,fn);},unregister(id,path){registered.delete(path);}};
+ class CheckRoll{evaluate(){}}class DamageRoll{evaluate(){}}class Spell{}
+ Spell.prototype.getDamage=true;
+ const dispose=installPf2eBridge({hooks,wrapper,game:{pf2e:{Check:{roll(){}}}},
+  config:{Dice:{rolls:[CheckRoll,DamageRoll]},PF2E:{Item:{documentClasses:{spell:Spell}}}},RollClass:class {},
+  onDialog(){},onClose(){},onFocus(){},getSnapshot:()=>null});
+ assert.equal(registered.has('CONFIG.PF2E.Item.documentClasses.spell.prototype.getDamage'),false);
+ dispose();assert.equal(callbacks.size,0);assert.equal(registered.size,0);
+});

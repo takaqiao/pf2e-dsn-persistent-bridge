@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-for(const {name,pf2e='8.6.0',foundry='14.368',dsn='6.4.1',system='pf2e',want=1} of [
+for(const {name,pf2e='8.6.0',foundry='14.368',dsn='6.4.1',system='pf2e',capable=true,want=1} of [
   {name:'allows PF2e before 8.5.1',pf2e:'8.4.0'},
   {name:'allows PF2e 8.5.1',pf2e:'8.5.1'},
   {name:'allows PF2e 8.6.0'},
-  {name:'requires Foundry 14.361',foundry:'14.360',want:0},
-  {name:'requires DsN 6.4.1',dsn:'6.4.0',want:0},
+  {name:'uses contracts for older Foundry labels',foundry:'14.360'},
+  {name:'uses contracts for older DsN labels',dsn:'6.4.0'},
+  {name:'uses contracts for future labels',foundry:'15.1',dsn:'7.0.0'},
+  {name:'requires native PF2e entry points',capable:false,want:0},
   {name:'requires the PF2e system',system:'dnd5e',want:0}
 ]) test(`bridge startup ${name} after the native DsN box becomes available`,async()=>{
   const source=await readFile(new URL('../scripts/main.js',import.meta.url),'utf8');
@@ -18,12 +20,12 @@ for(const {name,pf2e='8.6.0',foundry='14.368',dsn='6.4.1',system='pf2e',want=1} 
   const prior=globalThis.Hooks;globalThis.Hooks=hooks;
   try {
     new Function('Hooks','game','foundry','readSetting','SETTINGS','MOD_ID','registerSettings',
-      'registerPf2eColorsets','createBridge','installMessageSuppression','migrateSettings','runChecks','warn',
+      'registerPf2eColorsets','createBridge','installMessageSuppression','migrateSettings','runChecks','warn','canInstallPf2eBridge',
       source.slice(source.indexOf('if(globalThis.Hooks)')))(hooks,game,{utils:{
         isNewerVersion:(a,b)=>a.localeCompare(b,'en',{numeric:true})>0}},
         ()=>true,{enabled:'enabled'},'pf2e-dsn-persistent-bridge',()=>{},async()=>{},
         ()=>({enable:async()=>{enabled++;},diagnose:()=>({capabilities:{enabled:true}})}),
-        ()=>()=>{},async()=>{},()=>{},e=>{throw e;});
+        ()=>()=>{},async()=>{},()=>{},e=>{throw e;},()=>capable);
     events.get('ready')();await new Promise(r=>setImmediate(r));assert.equal(enabled,0);
     game.dice3d={box:{ready:null}};
     events.get('diceSoNiceReady')();await new Promise(r=>setImmediate(r));assert.equal(enabled,0);

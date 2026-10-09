@@ -13,9 +13,15 @@ https://github.com/takaqiao/pf2e-dsn-persistent-bridge/releases/latest/download/
 - Dice So Nice! 6.4.1+
 - libWrapper module
 
-Version 0.5.5 removes the PF2e minimum-version gate while retaining the
-system identity and native interface checks. A full PF2e 8.6.0 world session
-has not been verified.
+Version 0.5.6 replaces runtime Foundry and Dice So Nice version checks with
+the native interfaces used by the bridge. PF2e roll targets and DsN preview,
+input and physics interfaces are checked before wrappers are installed;
+unsupported interfaces leave the native roll flow available.
+
+Source review and 213 isolated regression tests cover Foundry 14.369,
+PF2e 8.6.0 and Dice So Nice 6.4.4. Browser/WebGL rendering and multiplayer
+world sessions on those versions have not been verified. The manifest keeps
+its existing installation requirements and verified world-session labels.
 
 The octagonal tray replaces the old fixed-dice controls. Open a native PF2e
 check or damage dialog, hold and drag out the dice, then release to roll.
@@ -29,4 +35,4 @@ the tray failing to appear with that setting off, without changing it.
 Previews warm the native material and shader cache and use a static random
 arrangement. Preparation stays local and adds no idle physics or rendering loop.
 
-See the [README](https://github.com/takaqiao/pf2e-dsn-persistent-bridge#readme) for what's included and the [CHANGELOG](https://github.com/takaqiao/pf2e-dsn-persistent-bridge/blob/v0.5.5/CHANGELOG.md) for what changed in this release.
+See the [README](https://github.com/takaqiao/pf2e-dsn-persistent-bridge#readme) for what's included and the [CHANGELOG](https://github.com/takaqiao/pf2e-dsn-persistent-bridge/blob/v0.5.6/CHANGELOG.md) for what changed in this release.

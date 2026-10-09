@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6 — 2026-10-10
+
+- Replaced runtime Foundry and Dice So Nice version checks with the native interfaces used by the bridge. Manifest installation requirements and previously verified world-session versions remain unchanged.
+- Check PF2e roll targets and the DsN preview, input and physics interfaces before installing wrappers. Missing or non-callable targets disable the tray without leaving partial Hook or wrapper registrations. Invalid roll-class entries are rejected; optional spell damage support is installed only when callable.
+- Reviewed Foundry 14.369, PF2e 8.6.0 and Dice So Nice 6.4.4 sources and ran isolated regression tests. Browser/WebGL rendering and multiplayer world sessions on those versions have not been verified. Local ownership, public-roll visibility and result-identity checks remain in place.
+
 ## 0.5.5 — 2026-10-08
 
 - Removed the PF2e minimum-version gate from the manifest and startup checks. The bridge still requires PF2e and its native interfaces, Foundry 14.361+, Dice So Nice 6.4.1+ and libWrapper.

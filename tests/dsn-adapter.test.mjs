@@ -613,3 +613,21 @@ test('task guest cannot claim another native interactive pending roll',async()=>
   assert.equal(runtime.pendingThrows.pending.size,1);
   assert.equal(runtime.pendingThrows.claimThrow([runtime.mesh('d20')],[],new Map()),'other-card');
 });
+
+for(const path of ['_buildDiceBox','_fadeOutCanvas','_cancelCanvasFade','persistent._persistentRoleContext',
+ 'exports.Utils.sanitizeRoleScopes','DiceFactory.detectRole','diceLibrary.constructor.getLibraryForUser',
+ 'box.physicsWorker.exec','box.clearScene','box.onMouseMove','box.setScene','utils.mergeObject','user.getFlag'])
+ for(const invalid of [undefined,true])test('missing or non-callable '+path+' cannot partially install the adapter: '+invalid,async()=>{
+  const runtime=makeDsnRuntime(),parts=path.split('.'),key=parts.pop();
+  const owner=parts.reduce((o,k)=>o[k],runtime);owner[key]=invalid;
+  const original={spawn:runtime.box.spawnPersistentDie,completion:runtime.box.throwEngine.handlePersistentThrowCompletion,
+   queue:runtime.box.persistentDiceManager.onQueueThrow,enabled:runtime.box.persistentDiceEnabled};
+  const adapter=createDsnAdapter({dice3d:runtime,user:runtime.user,utils:runtime.utils,hooks:runtime.hooks,onSettled(){}});
+  assert.equal(await adapter.ready(),false);
+  assert.equal(runtime.box.spawnPersistentDie,original.spawn);
+  assert.equal(runtime.box.throwEngine.handlePersistentThrowCompletion,original.completion);
+  assert.equal(runtime.box.persistentDiceManager.onQueueThrow,original.queue);
+  assert.equal(runtime.box.persistentDiceEnabled,original.enabled);
+  assert.equal(runtime.physics.length,0);assert.deepEqual(runtime.events,[]);
+  await adapter.dispose();
+ });

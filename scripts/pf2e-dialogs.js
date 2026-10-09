@@ -2,6 +2,18 @@ import {MOD_ID,warn} from './constants.js';
 import {checkDiceFormula,describeDice,describeDamageDialog} from './descriptors.js';
 import {createRollBindings,evaluateWithSnapshot} from './result-bridge.js';
 
+export function canInstallPf2eBridge({hooks=globalThis.Hooks,wrapper=globalThis.libWrapper,
+  game=globalThis.game,config=globalThis.CONFIG,RollClass=globalThis.Roll}={}) {
+  return typeof hooks?.on==='function'&&typeof hooks?.off==='function'
+    &&typeof wrapper?.register==='function'&&typeof wrapper?.unregister==='function'
+    &&typeof game?.pf2e?.Check?.roll==='function'&&typeof RollClass==='function'
+    &&Array.isArray(config?.Dice?.rolls)&&[...config.Dice.rolls].every(Class=>typeof Class==='function')
+    &&['CheckRoll','DamageRoll'].every(name=>{
+      const Class=config.Dice.rolls.find(candidate=>candidate.name===name);
+      return typeof Class?.prototype?.evaluate==='function';
+    });
+}
+
 export function supportsPhysicalDialog(app) {
   if(app.constructor.name==='CheckModifiersDialog') return Boolean(app.context&&app.check);
   if(app.constructor.name!=='DamageModifierDialog') return false;
@@ -82,7 +94,7 @@ export function installPf2eBridge({onDialog,onClose,onFocus,getSnapshot,onSubmit
     });
   }
   const spell=config.PF2E?.Item?.documentClasses?.spell;
-  if(spell?.prototype?.getDamage) wrap('CONFIG.PF2E.Item.documentClasses.spell.prototype.getDamage',
+  if(typeof spell?.prototype?.getDamage==='function') wrap('CONFIG.PF2E.Item.documentClasses.spell.prototype.getDamage',
     async function(wrapped,...args) {
       const result=await wrapped(...args);
       const session=result?.context?bindings.getSpellSession(result.context):null;

@@ -3,7 +3,7 @@ import {createSession} from './session.js';
 import {createDsnAdapter,shouldSuppressRevision} from './dsn-adapter.js';
 import {createTrayView} from './tray-view.js';
 import {createGestureController} from './gestures.js';
-import {installPf2eBridge} from './pf2e-dialogs.js';
+import {installPf2eBridge,canInstallPf2eBridge} from './pf2e-dialogs.js';
 import {registerSettings,migrateSettings} from './settings.js';
 import {registerPf2eColorsets} from './pf2e-colorsets.js';
 import {describeDice} from './descriptors.js';
@@ -147,15 +147,13 @@ export async function runChecks(RollClass=globalThis.Roll) {
 if(globalThis.Hooks) {
   let bridge=null,suppression=null,sync=Promise.resolve();
   const versions=()=>({foundry:game.version,pf2e:game.system.version,dsn:game.modules.get('dice-so-nice')?.version});
-  const minimum=(actual,required)=>actual&&!foundry.utils.isNewerVersion(required,actual);
   function synchronize() {
     sync=sync.then(async()=>{
       if(readSetting(SETTINGS.enabled)===false) {await bridge?.disable();suppression?.();suppression=null;return;}
       if(bridge?.diagnose().capabilities.enabled) {bridge.refresh();return;}
       const v=versions();
       if(game.system.id!=='pf2e'||!game.modules.get('lib-wrapper')?.active||!game.modules.get('dice-so-nice')?.active||
-        !game.dice3d?.box?.ready||
-        !minimum(v.foundry,'14.361')||!minimum(v.dsn,'6.4.1')) return;
+        !game.dice3d?.box?.ready||!canInstallPf2eBridge()) return;
       await migrateSettings();
       await registerPf2eColorsets(game.dice3d);
       bridge=createBridge({versions:v,getSetting:readSetting,onPhysicalRoll:roll=>suppression?.remember(roll),pf2e:options=>installPf2eBridge(options),

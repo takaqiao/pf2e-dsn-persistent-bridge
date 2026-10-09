@@ -329,12 +329,28 @@ export function createDsnAdapter({dice3d,onSettled,onBoxChanged=()=>{},onFailure
       if(disposed) return false;
       const next=dice3d?.box;if(!next) return false;await next.ready;
       const i=next?.inputHandler,m=next?.persistentDiceManager,e=next?.throwEngine;
-      if(!dice3d.persistent?.spawn||!dice3d.persistent?.remove||!dice3d.persistent?._emitPersistentEvent||!dice3d.pendingThrows?.claimThrow||
-        !dice3d.pendingThrows?.shouldStampInteractive||!next.spawnPersistentDie||!next.removePersistentDie||
-        !i?._beginPersistentGrab||!i?._activatePreRoll||!i?._resetPreRollState||!i?._computeThrowVelocity||
-        !m?.onQueueThrow||!m?.matchSFX||!m?.throwPersistentDice||!m?._getPersistentTextureCache||!e?.handlePersistentThrowCompletion||
-        !e?.createDiceMesh||!e?.getVectors||!next?.renderScene||
-        !dice3d.exports?.Utils||!dice3d.DiceFactory?.getAppearanceForDice||!utils||!user) return false;
+      if(disposed||dice3d.box!==next) return false;
+      // Check the methods used by previews and patches before changing any owner.
+      const methods=[
+        [dice3d,['_buildDiceBox','_fadeOutCanvas','_cancelCanvasFade']],
+        [dice3d.persistent,['spawn','remove','_emitPersistentEvent','_persistentRoleContext']],
+        [dice3d.pendingThrows,['claimThrow','shouldStampInteractive']],
+        [next,['spawnPersistentDie','removePersistentDie','clearScene','setScene','update',
+          'onMouseMove','onMouseUp','renderScene','fadeOutEphemeral','toPositionPct']],
+        [next.physicsWorker,['exec']],[next.scene,['add','remove']],
+        [i,['_beginPersistentGrab','_activatePreRoll','_resetPreRollState','_computeThrowVelocity']],
+        [i?.mouse?.pos,['set']],
+        [m,['onQueueThrow','matchSFX','throwPersistentDice','_getPersistentTextureCache']],
+        [e,['handlePersistentThrowCompletion','createDiceMesh','getVectors']],
+        [dice3d.DiceFactory,['getRole','detectRole','getAppearanceForDice']],
+        [dice3d.exports?.Utils,['contrastOf','sanitizeAppearance','sanitizeRoleScopes']],
+        [dice3d.diceLibrary?.constructor,['getLibraryForUser']],
+        [utils,['duplicate','mergeObject','isEmpty']],[user,['getFlag']],
+        [dice3d.canvas,['getBoundingClientRect']],[dice3d.canvas?.classList,['add','remove']]
+      ];
+      if(!user?.id||!methods.every(([owner,keys])=>keys.every(key=>typeof owner?.[key]==='function'))
+        ||!Array.isArray(next.persistentDiceList)||!Array.isArray(i?.mouse?.heldPersistentDice)
+        ||!Array.isArray(i?.mouse?.pendingThrowDice)) return false;
       if(box===next) {refreshTrayCanvas();return true;}
       const previous=box;
       if(previous) {
